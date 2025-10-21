@@ -1,0 +1,15 @@
+# Use Python 3.13
+FROM python:3.13.5-slim
+
+# set working directory
+WORKDIR /app
+
+# Copy and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the code
+COPY . .
+
+# default command (you may override in compose)
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
