@@ -2,27 +2,24 @@ version: '3.8'
 
 volumes:
   postgres_data:
-  postgres_data_backups:
   pgadmin_data:
   media_files:
 
 services:
   db:
-    build:
-      context: ../.
-      dockerfile: ./docker-compose/Dockerfile
-    image: safety_agent_db:production
+    image: ankane/pgvector:latest
     container_name: safety_agent_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - postgres_data_backups:/backups
     env_file:
       - ./.postgres.production
+    ports:
+      - "5432:5432"
     restart: always
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pgadmin_z9f3}"]
+      test: ["CMD-SHELL", "pg_isready -U oinride_admin -d oinride_production"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -33,21 +30,12 @@ services:
       dockerfile: ./docker-compose/Dockerfile.django
     image: safety_agent_web:production
     container_name: safety_agent_web
-    command: >
-      sh -c "python manage.py migrate &&
-             python manage.py collectstatic --noinput &&
-             gunicorn Safety_agent_Django.wsgi:application
-             --bind 0.0.0.0:8000
-             --workers 4
-             --timeout 120
-             --access-logfile -
-             --error-logfile -
-             --log-level info"
+    command: sh -c "python manage.py migrate && python manage.py collectstatic --noinput && gunicorn Safety_agent_Django.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120 --access-logfile - --error-logfile - --log-level info"
     volumes:
       - ../:/app
       - media_files:/app/media
     ports:
-      - "127.0.0.1:8000:8000"
+      - "0.0.0.0:8000:8000"
     env_file:
       - ./.postgres.production
     environment:
@@ -69,14 +57,12 @@ services:
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: safety_agent_pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
-      PGADMIN_CONFIG_SERVER_MODE: 'True'
+    env_file:
+      - ./.postgres.production
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     ports:
-      - "127.0.0.1:5050:80"
+      - "5050:80"
     depends_on:
       - db
     restart: always
