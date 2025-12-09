@@ -164,18 +164,28 @@ def upload_pdf(request):
         )
         docs = text_splitter.split_documents(documents)
 
-        vectorstore = vector_store(collection_name)
-        vectorstore.add_documents(docs)
-
-        # Save PDF metadata to database with file path
+        # Create PDF record FIRST to get the ID for metadata tracking
         relative_path = f"pdfs/{username}/{unique_filename}"
         uploaded_pdf = UploadedPDF.objects.create(
             user_knowledge_base=user_kb,
             filename=filename,
             file_path=relative_path,
             file_size=file_size,
-            chunks_count=len(docs)
+            chunks_count=0  # Will update after adding vectors
         )
+
+        # Add PDF ID to each document's metadata for tracking
+        for doc in docs:
+            doc.metadata["pdf_id"] = str(uploaded_pdf.id)
+            doc.metadata["pdf_filename"] = filename
+
+        # Add documents to vectorstore with metadata
+        vectorstore = vector_store(collection_name)
+        vectorstore.add_documents(docs)
+
+        # Update chunks count
+        uploaded_pdf.chunks_count = len(docs)
+        uploaded_pdf.save()
 
         return JsonResponse({
             "message": "✅ PDF processed and chunks saved",
@@ -388,7 +398,7 @@ def list_pdfs(request):
 @csrf_exempt
 @require_http_methods(["POST", "DELETE"])
 def delete_pdf(request):
-    """Delete a PDF from user's list."""
+    """Delete a PDF from user's list AND remove its vector chunks from database."""
     try:
         username = request.GET.get("username", "").strip()
 
@@ -417,6 +427,7 @@ def delete_pdf(request):
             return JsonResponse({"error": "PDF not found or does not belong to this user"}, status=404)
 
         filename = pdf.filename
+        chunks_count = pdf.chunks_count
 
         # Delete the physical file if it exists
         if pdf.file_path:
@@ -424,11 +435,54 @@ def delete_pdf(request):
             if file_full_path.exists():
                 file_full_path.unlink()
 
+        # IMPORTANT: Delete vector chunks from pgvector database
+        # This prevents orphaned chunks from appearing in search results
+        vectors_deleted = 0
+        try:
+            from django.db import connection
+
+            # First, try to delete by pdf_id metadata (for PDFs uploaded after metadata tracking)
+            delete_by_metadata_query = """
+                DELETE FROM langchain_pg_embedding
+                WHERE collection_id = (
+                    SELECT uuid FROM langchain_pg_collection
+                    WHERE name = %s
+                )
+                AND cmetadata->>'pdf_id' = %s
+            """
+            with connection.cursor() as cursor:
+                cursor.execute(delete_by_metadata_query, [user_kb.collection_name, str(pdf_id)])
+                vectors_deleted = cursor.rowcount
+                print(f"[DELETE_PDF] Deleted {vectors_deleted} vector chunks for PDF ID {pdf_id}")
+
+                # Fallback: If no vectors were deleted (old PDFs without metadata),
+                # and this is the ONLY PDF for this user, clean the entire collection
+                if vectors_deleted == 0:
+                    remaining_pdfs = UploadedPDF.objects.filter(user_knowledge_base=user_kb).exclude(id=pdf_id).count()
+                    if remaining_pdfs == 0:
+                        # This is the last PDF - safe to delete all vectors for this user
+                        delete_all_query = """
+                            DELETE FROM langchain_pg_embedding
+                            WHERE collection_id = (
+                                SELECT uuid FROM langchain_pg_collection
+                                WHERE name = %s
+                            )
+                        """
+                        cursor.execute(delete_all_query, [user_kb.collection_name])
+                        vectors_deleted = cursor.rowcount
+                        print(f"[DELETE_PDF] Fallback cleanup: Deleted {vectors_deleted} orphaned chunks (last PDF for user)")
+        except Exception as vector_error:
+            print(f"[DELETE_PDF] Warning: Could not clean vectors: {vector_error}")
+            # Continue with deletion even if vector cleanup fails
+
+        # Delete the PDF record from Django database
         pdf.delete()
 
         return JsonResponse({
             "message": f"✅ PDF '{filename}' deleted successfully",
-            "deleted_pdf_id": int(pdf_id)
+            "deleted_pdf_id": int(pdf_id),
+            "chunks_deleted": chunks_count,
+            "vectors_deleted": vectors_deleted
         })
 
     except Exception as e:
