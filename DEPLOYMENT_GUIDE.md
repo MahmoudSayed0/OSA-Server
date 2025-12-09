@@ -252,46 +252,99 @@ docker-compose -f docker-compose.production.yml exec web python manage.py create
 ### Step 1: Clone Frontend Repository
 ```bash
 cd /home/deploy
-git clone https://github.com/yourusername/frontend.git
-cd frontend
+git clone https://github.com/yourusername/oinride-agent-ai.git
+cd oinride-agent-ai
 ```
 
 ### Step 2: Create Environment File
 ```bash
-nano .env.production
+nano .env.local
 ```
 
 Add:
 ```env
-NEXT_PUBLIC_API_URL=https://api.your-domain.com
-NEXT_PUBLIC_WS_URL=wss://api.your-domain.com
+# API Configuration (server-side proxy to Django backend)
+API_BASE_URL=http://localhost:8000
+NEXT_PUBLIC_API_TARGET=http://localhost:8000
+
+# Next.js Configuration
+NEXT_PUBLIC_APP_URL=https://your-domain.com
 ```
 
-### Step 3: Install Dependencies
+### Step 3: Create PM2 Ecosystem Config File
+This ensures PM2 remembers your app configuration after reboots:
 ```bash
-npm install
+nano ecosystem.config.cjs
+```
+**Note:** Use `.cjs` extension because the project uses ES modules (`"type": "module"` in package.json).
+
+Add:
+```javascript
+module.exports = {
+  apps: [
+    {
+      name: 'oinride-frontend',
+      cwd: '/home/deploy/oinride-agent-ai',
+      script: 'npm',
+      args: 'start',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3000,
+        API_BASE_URL: 'http://localhost:8000',
+        NEXT_PUBLIC_API_TARGET: 'http://localhost:8000',
+        NEXT_PUBLIC_APP_URL: 'https://your-domain.com'
+      },
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '500M',
+      error_file: '/home/deploy/logs/frontend-error.log',
+      out_file: '/home/deploy/logs/frontend-out.log',
+      log_file: '/home/deploy/logs/frontend-combined.log',
+      time: true
+    }
+  ]
+};
 ```
 
-### Step 4: Build Next.js App
+### Step 4: Install Dependencies
+```bash
+# Create logs directory
+mkdir -p ~/logs
+
+# Install dependencies (use --legacy-peer-deps for React 19 compatibility)
+npm install --legacy-peer-deps
+```
+
+### Step 5: Build Next.js App
 ```bash
 npm run build
 ```
 
-### Step 5: Install PM2 (Process Manager)
+### Step 6: Install PM2 (Process Manager)
 ```bash
 npm install -g pm2
 ```
 
-### Step 6: Start Next.js with PM2
+### Step 7: Start Next.js with PM2
 ```bash
-pm2 start npm --name "frontend" -- start
+# Start using ecosystem config file
+pm2 start ecosystem.config.cjs
 
-# Save PM2 configuration
+# Save PM2 configuration (CRITICAL - makes it persist after reboot)
 pm2 save
 
 # Setup PM2 to start on boot
 pm2 startup
-# Follow the command it gives you
+# IMPORTANT: Copy and run the command it outputs!
+# Example: sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u deploy --hp /home/deploy
+
+# Save again after startup setup
+pm2 save
+
+# Verify
+pm2 status
+pm2 logs oinride-frontend
 ```
 
 ---
@@ -553,20 +606,28 @@ docker-compose -f docker-compose.production.yml logs -f
 ### Frontend Management
 ```bash
 # Restart frontend
-pm2 restart frontend
+pm2 restart oinride-frontend
 
 # View status
 pm2 status
 
 # View logs
-pm2 logs frontend
+pm2 logs oinride-frontend
+
+# Monitor resources
+pm2 monit
 
 # Rebuild and restart
-cd /home/deploy/frontend
+cd /home/deploy/oinride-agent-ai
 git pull
-npm install
+npm install --legacy-peer-deps
 npm run build
-pm2 restart frontend
+pm2 restart oinride-frontend
+
+# If PM2 forgets the app after reboot:
+cd /home/deploy/oinride-agent-ai
+pm2 start ecosystem.config.cjs
+pm2 save
 ```
 
 ### Nginx Management
@@ -642,11 +703,33 @@ sudo systemctl status nginx
 ```bash
 # Check PM2
 pm2 status
-pm2 logs frontend
+pm2 logs oinride-frontend
 
 # Rebuild
 npm run build
-pm2 restart frontend
+pm2 restart oinride-frontend
+```
+
+**PM2 forgets app after reboot:**
+```bash
+# This happens when pm2 save wasn't run properly
+
+# Step 1: Recreate the app
+cd /home/deploy/oinride-agent-ai
+pm2 start ecosystem.config.cjs
+
+# Step 2: Save the configuration
+pm2 save
+
+# Step 3: Setup startup hook
+pm2 startup
+# Run the command it outputs (with sudo)
+
+# Step 4: Save again
+pm2 save
+
+# Verify
+pm2 list
 ```
 
 **Database connection issues:**

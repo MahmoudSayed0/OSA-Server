@@ -334,41 +334,105 @@ npm --version
 ### Clone Frontend Repository
 ```bash
 cd ~
-git clone https://github.com/YOUR_USERNAME/frontend.git
-cd frontend
+git clone https://github.com/YOUR_USERNAME/oinride-agent-ai.git
+cd oinride-agent-ai
 ```
 
 ### Create Environment File
 ```bash
-nano .env.production
+nano .env.local
 ```
 
 **Add:**
 ```env
-NEXT_PUBLIC_API_URL=http://31.97.35.144
-# Or if you have SSL: https://api.your-domain.com
+# API Configuration (server-side proxy)
+API_BASE_URL=http://localhost:8000
+NEXT_PUBLIC_API_TARGET=http://localhost:8000
+
+# Next.js Configuration
+NEXT_PUBLIC_APP_URL=http://31.97.35.144
+```
+
+### Create PM2 Ecosystem File (Recommended - Persists After Reboot)
+```bash
+nano ecosystem.config.cjs
+```
+**Note:** Use `.cjs` extension because the project uses ES modules (`"type": "module"` in package.json).
+
+**Add:**
+```javascript
+module.exports = {
+  apps: [
+    {
+      name: 'oinride-frontend',
+      cwd: '/home/deploy/oinride-agent-ai',
+      script: 'npm',
+      args: 'start',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3000,
+        API_BASE_URL: 'http://localhost:8000',
+        NEXT_PUBLIC_API_TARGET: 'http://localhost:8000',
+        NEXT_PUBLIC_APP_URL: 'http://31.97.35.144'
+      },
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '500M',
+      error_file: '/home/deploy/logs/frontend-error.log',
+      out_file: '/home/deploy/logs/frontend-out.log',
+      log_file: '/home/deploy/logs/frontend-combined.log',
+      time: true
+    }
+  ]
+};
 ```
 
 ### Build and Start
 ```bash
-# Install dependencies
-npm install
+# Create logs directory
+mkdir -p ~/logs
 
-# Build
+# Install dependencies (use --legacy-peer-deps if needed)
+npm install --legacy-peer-deps
+
+# Build the application
 npm run build
 
-# Install PM2
+# Install PM2 globally
 sudo npm install -g pm2
 
-# Start with PM2
-pm2 start npm --name "frontend" -- start
+# Start with PM2 using ecosystem file
+pm2 start ecosystem.config.cjs
 
-# Save PM2 configuration
+# Save PM2 configuration (IMPORTANT - makes it persist)
 pm2 save
 
 # Setup PM2 to start on boot
 pm2 startup
-# Run the command it gives you
+# Copy and run the command it outputs (looks like: sudo env PATH=... pm2 startup systemd -u deploy --hp /home/deploy)
+
+# Verify the startup hook
+pm2 save
+```
+
+### Verify PM2 is Working
+```bash
+# Check status
+pm2 status
+
+# Should show:
+# ┌─────┬────────────────────┬─────────────┬─────────┬─────────┬──────────┐
+# │ id  │ name               │ namespace   │ mode    │ status  │ cpu      │
+# ├─────┼────────────────────┼─────────────┼─────────┼─────────┼──────────┤
+# │ 0   │ oinride-frontend   │ default     │ fork    │ online  │ 0%       │
+# └─────┴────────────────────┴─────────────┴─────────┴─────────┴──────────┘
+
+# View logs
+pm2 logs oinride-frontend
+
+# Monitor resources
+pm2 monit
 ```
 
 ### Configure Nginx for Frontend
@@ -429,20 +493,32 @@ docker-compose -f docker-compose.production.yml restart web
 ### Frontend Management
 ```bash
 # Restart
-pm2 restart frontend
+pm2 restart oinride-frontend
 
 # View logs
-pm2 logs frontend
+pm2 logs oinride-frontend
 
 # Status
 pm2 status
 
+# Stop frontend
+pm2 stop oinride-frontend
+
+# Delete and recreate (if needed)
+pm2 delete oinride-frontend
+pm2 start ecosystem.config.cjs
+
 # Update code
-cd ~/frontend
+cd ~/oinride-agent-ai
 git pull
-npm install
+npm install --legacy-peer-deps
 npm run build
-pm2 restart frontend
+pm2 restart oinride-frontend
+
+# If PM2 forgets the app after reboot, recreate it:
+cd ~/oinride-agent-ai
+pm2 start ecosystem.config.cjs
+pm2 save
 ```
 
 ---
@@ -541,6 +617,62 @@ docker-compose -f docker-compose.production.yml restart web
 # Check database container
 docker ps | grep db
 docker-compose -f docker-compose.production.yml logs db
+```
+
+**PM2 forgets app name after reboot:**
+```bash
+# This happens when pm2 save wasn't run or startup wasn't configured
+
+# Step 1: Go to frontend directory
+cd ~/oinride-agent-ai
+
+# Step 2: Check if ecosystem.config.cjs exists
+ls -la ecosystem.config.cjs
+
+# Step 3: If missing, create it (see Step 9 above)
+
+# Step 4: Start the app
+pm2 start ecosystem.config.cjs
+
+# Step 5: IMPORTANT - Save the configuration
+pm2 save
+
+# Step 6: Setup startup (run as the deploy user)
+pm2 startup
+# Copy and execute the command it outputs
+
+# Step 7: Save again after startup setup
+pm2 save
+
+# Verify it's saved
+pm2 list
+cat ~/.pm2/dump.pm2
+```
+
+**PM2 shows "errored" status:**
+```bash
+# Check the error logs
+pm2 logs oinride-frontend --err --lines 50
+
+# Common fixes:
+# 1. Port 3000 already in use
+lsof -i :3000
+kill -9 <PID>
+
+# 2. Build not done
+cd ~/oinride-agent-ai
+npm run build
+pm2 restart oinride-frontend
+
+# 3. Missing .next folder
+ls -la .next
+# If missing, rebuild: npm run build
+
+# 4. Node modules issue
+rm -rf node_modules
+npm install --legacy-peer-deps
+npm run build
+pm2 restart oinride-frontend
 ```
 
 ---
