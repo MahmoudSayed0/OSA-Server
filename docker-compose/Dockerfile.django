@@ -1,6 +1,24 @@
 # Use Python 3.13
 FROM python:3.13.5-slim
 
+# Install system dependencies for Docling (PDF processing, OCR support)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpoppler-cpp-dev \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-ara \
+    tesseract-ocr-eng \
+    libtesseract-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
 # set working directory
 WORKDIR /app
 

@@ -12,9 +12,19 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 
 from pathlib import Path
+from datetime import timedelta
 import os
 
-os.environ["PGVECTOR_CONNECTION"] = "postgresql+psycopg2://pgadmin_z9f3:R7u!xVw2sKp@3yNq@localhost:6543/oinride"
+# Build PGVECTOR_CONNECTION from individual env vars if not explicitly set
+# This allows flexibility while keeping credentials out of source code
+if not os.getenv("PGVECTOR_CONNECTION"):
+    _pg_user = os.getenv('POSTGRES_USER', '')
+    _pg_pass = os.getenv('POSTGRES_PASSWORD_FLAT', '')
+    _pg_host = os.getenv('POSTGRES_HOST', 'db')
+    _pg_port = os.getenv('POSTGRES_PORT', '5432')
+    _pg_db = os.getenv('POSTGRES_DB', '')
+    if _pg_user and _pg_db:
+        os.environ["PGVECTOR_CONNECTION"] = f"postgresql+psycopg2://{_pg_user}:{_pg_pass}@{_pg_host}:{_pg_port}/{_pg_db}"
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -25,12 +35,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-=t$!ml1($#-kp=$+*%x*lg0g$&)6wv0fx2o2-443&93_dr*8p#'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-dev-only-change-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "31.97.35.144", "*"]
+# ALLOWED_HOSTS from environment variable (comma-separated) with defaults for development
+_allowed_hosts = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1')
+ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts.split(',') if h.strip()]
 
 
 # Application definition
@@ -42,10 +54,18 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'chatlog'
+    # Third-party apps
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'corsheaders',
+    # Local apps
+    'accounts',
+    'chatlog',
+    'subscriptions',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # Must be at the top
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -136,3 +156,69 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Custom User Model
+AUTH_USER_MODEL = 'accounts.User'
+
+# Google OAuth Configuration
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '891175220269-btcbo6gf0jouraq9m936s8gnqdmo9hbj.apps.googleusercontent.com')
+
+# JWT Configuration
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'UPDATE_LAST_LOGIN': True,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_OBTAIN_SERIALIZER': 'rest_framework_simplejwt.serializers.TokenObtainPairSerializer',
+}
+
+# Django REST Framework Configuration
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'accounts.authentication.CookieJWTAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',  # Default to AllowAny, protect specific views
+    ],
+}
+
+# CORS Configuration
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3006",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3006",
+    "http://31.97.35.144",
+    "http://31.97.35.144:3000",
+    "http://31.97.35.144:3006",
+]
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'ngrok-skip-browser-warning',
+]
+
+# CSRF Configuration
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3006",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3006",
+    "http://31.97.35.144",
+    "http://31.97.35.144:3000",
+    "http://31.97.35.144:3006",
+]

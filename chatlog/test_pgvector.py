@@ -9,9 +9,10 @@ from langchain.text_splitter import TokenTextSplitter
 # This downloads a small SentenceTransformers model on first run (~80MB)
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-# 2. Connection string to Postgres
-# NOTE: password must stay URL-encoded
-CONNECTION_STRING = "postgresql+psycopg2://pgadmin_z9f3:R7u%21xVw2sKp%403yNq@localhost:6543/oinride"
+# 2. Connection string to Postgresimport os
+
+# NOTE: Connection string should come from environment variables
+CONNECTION_STRING = os.getenv('PGVECTOR_CONNECTION') or os.getenv('DATABASE_URL', '')
 
 # 3. Name of the collection (table)
 COLLECTION_NAME = "chunked_document"
