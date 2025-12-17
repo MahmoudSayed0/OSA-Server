@@ -8,6 +8,23 @@ from .views import (
     upload_foundation_pdf, list_foundation_documents, delete_foundation_document,
     get_foundation_document_status, get_foundation_stats
 )
+from .admin_views import (
+    # Authentication
+    admin_login, admin_me,
+    # Dashboard Analytics
+    dashboard_stats, user_growth_data, document_upload_data, recent_activity,
+    # Advanced Analytics
+    revenue_trends, user_activity_metrics, subscription_distribution, system_health_metrics,
+    # User Management
+    list_users, get_user_detail, update_user_subscription, adjust_user_credits, delete_user as delete_user_admin,
+    # User Detail Views
+    user_activity_history, user_usage_analytics, user_billing_info, user_documents_list,
+    # Document Management
+    list_all_documents, delete_document,
+    # Subscription Plan Management
+    list_subscription_plans, get_subscription_plan, create_subscription_plan,
+    update_subscription_plan, delete_subscription_plan,
+)
 
 urlpatterns = [
     # User Management
@@ -49,4 +66,48 @@ urlpatterns = [
 
     # Foundation Knowledge Base (Public)
     path("foundation/stats/", get_foundation_stats, name="get_foundation_stats"),
+
+    # ==============================
+    # ADMIN PANEL ROUTES (Staff-only)
+    # ==============================
+
+    # Admin Authentication
+    path("admin/login/", admin_login, name="admin_login"),
+    path("admin/me/", admin_me, name="admin_me"),
+
+    # Admin Dashboard Analytics
+    path("admin/dashboard/stats/", dashboard_stats, name="dashboard_stats"),
+    path("admin/dashboard/user-growth/", user_growth_data, name="user_growth_data"),
+    path("admin/dashboard/document-uploads/", document_upload_data, name="document_upload_data"),
+    path("admin/dashboard/recent-activity/", recent_activity, name="recent_activity"),
+
+    # Advanced Analytics (Charts)
+    path("admin/analytics/revenue-trends/", revenue_trends, name="revenue_trends"),
+    path("admin/analytics/user-activity/", user_activity_metrics, name="user_activity_metrics"),
+    path("admin/analytics/subscription-distribution/", subscription_distribution, name="subscription_distribution"),
+    path("admin/analytics/system-health/", system_health_metrics, name="system_health_metrics"),
+
+    # Admin User Management
+    path("admin/users/", list_users, name="list_users"),
+    path("admin/users/<uuid:user_id>/", get_user_detail, name="get_user_detail"),
+    path("admin/users/<uuid:user_id>/subscription/", update_user_subscription, name="update_user_subscription"),
+    path("admin/users/<uuid:user_id>/credits/", adjust_user_credits, name="adjust_user_credits"),
+    path("admin/users/<uuid:user_id>/delete/", delete_user_admin, name="delete_user_admin"),
+
+    # User Detail Views
+    path("admin/users/<uuid:user_id>/activity/", user_activity_history, name="user_activity_history"),
+    path("admin/users/<uuid:user_id>/usage/", user_usage_analytics, name="user_usage_analytics"),
+    path("admin/users/<uuid:user_id>/billing/", user_billing_info, name="user_billing_info"),
+    path("admin/users/<uuid:user_id>/documents/", user_documents_list, name="user_documents_list"),
+
+    # Admin Document Management
+    path("admin/documents/", list_all_documents, name="list_all_documents"),
+    path("admin/documents/<int:doc_id>/delete/", delete_document, name="delete_document"),
+
+    # Admin Subscription Plan Management
+    path("admin/plans/", list_subscription_plans, name="list_subscription_plans"),
+    path("admin/plans/<uuid:plan_id>/", get_subscription_plan, name="get_subscription_plan"),
+    path("admin/plans/create/", create_subscription_plan, name="create_subscription_plan"),
+    path("admin/plans/<uuid:plan_id>/update/", update_subscription_plan, name="update_subscription_plan"),
+    path("admin/plans/<uuid:plan_id>/delete/", delete_subscription_plan, name="delete_subscription_plan"),
 ]

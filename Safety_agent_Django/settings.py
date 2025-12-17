@@ -191,11 +191,14 @@ REST_FRAMEWORK = {
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "http://localhost:3005",  # Admin panel
     "http://localhost:3006",
     "http://127.0.0.1:3000",
+    "http://127.0.0.1:3005",  # Admin panel
     "http://127.0.0.1:3006",
     "http://31.97.35.144",
     "http://31.97.35.144:3000",
+    "http://31.97.35.144:3005",  # Admin panel
     "http://31.97.35.144:3006",
 ]
 CORS_ALLOW_CREDENTIALS = True
