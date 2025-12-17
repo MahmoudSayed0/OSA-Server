@@ -5,7 +5,7 @@ from langgraph.prebuilt import create_react_agent
 from langchain_community.tools import tool
 from langchain_community.vectorstores import PGVector
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 
 
 # ----------------------------
@@ -25,17 +25,18 @@ EMBEDDINGS = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-
 # Foundation Knowledge Base collection name (shared by all users)
 FOUNDATION_COLLECTION = 'foundation_mining_kb'
 
-# Google AI Studio API Key (from environment variable)
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-if not GOOGLE_API_KEY:
-    raise ValueError("GOOGLE_API_KEY environment variable is not set. Please set it in your .env file or docker-compose environment.")
+# OpenRouter API Key (for Mistral Devstral 2 2512)
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+if not OPENROUTER_API_KEY:
+    raise ValueError("OPENROUTER_API_KEY environment variable is not set. Please set it in your .env file or docker-compose environment.")
 
 # ----------------------------
-# LLM (Google AI Studio - Gemini 2.5 Flash - Free Tier)
+# LLM (Mistral Devstral 2 2512 via OpenRouter - Free Tier)
 # ----------------------------
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash-lite",
-    google_api_key=GOOGLE_API_KEY,
+llm = ChatOpenAI(
+    model="mistralai/devstral-2512:free",
+    openai_api_key=OPENROUTER_API_KEY,
+    openai_api_base="https://openrouter.ai/api/v1",
     temperature=0,
     max_tokens=2000
 )
