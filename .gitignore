@@ -62,3 +62,4 @@ backups/
 *.pem
 *.key
 secrets/
+SECRETS_TO_ADD.txt

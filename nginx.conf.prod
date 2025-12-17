@@ -1,0 +1,106 @@
+# Nginx Configuration for Oinride Platform
+# Location on VPS: /etc/nginx/sites-available/oinride
+#
+# After creating this file on VPS:
+# 1. sudo ln -s /etc/nginx/sites-available/oinride /etc/nginx/sites-enabled/
+# 2. sudo nginx -t
+# 3. sudo systemctl reload nginx
+
+server {
+    listen 80;
+    server_name 31.97.35.144 oinride.com www.oinride.com;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Increase upload size for file uploads
+    client_max_body_size 20M;
+
+    # Frontend (Next.js User App) - Port 3006
+    location / {
+        proxy_pass http://127.0.0.1:3006;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 75s;
+    }
+
+    # Admin Panel - Port 3005
+    location /admin-panel {
+        rewrite ^/admin-panel(.*)$ $1 break;
+        proxy_pass http://127.0.0.1:3005;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 75s;
+    }
+
+    # Django Backend API - Port 8000
+    location /chatlog {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+
+    # Additional API endpoints can be added here
+    location /api {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+
+    # Django Static Files
+    location /static/ {
+        alias /opt/oinride/backend/staticfiles/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Django Media Files
+    location /media/ {
+        alias /opt/oinride/backend/media/;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
+    # Gzip compression for better performance
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json;
+}
+
+# HTTPS configuration (uncomment after setting up SSL with certbot)
+# server {
+#     listen 443 ssl http2;
+#     server_name oinride.com www.oinride.com;
+#
+#     ssl_certificate /etc/letsencrypt/live/oinride.com/fullchain.pem;
+#     ssl_certificate_key /etc/letsencrypt/live/oinride.com/privkey.pem;
+#     ssl_protocols TLSv1.2 TLSv1.3;
+#     ssl_ciphers HIGH:!aNULL:!MD5;
+#     ssl_prefer_server_ciphers on;
+#
+#     # All location blocks from above go here
+# }
