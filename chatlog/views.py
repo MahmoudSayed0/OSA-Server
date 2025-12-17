@@ -1876,7 +1876,7 @@ def list_foundation_documents(request):
             'status': doc.status,
             'error_message': doc.error_message,
             'is_active': doc.is_active,
-            'created_at': doc.created_at.isoformat(),
+            'uploaded_at': doc.created_at.isoformat(),  # Match frontend expectation
             'updated_at': doc.updated_at.isoformat()
         } for doc in documents]
 
