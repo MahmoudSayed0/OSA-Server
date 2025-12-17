@@ -83,7 +83,7 @@ python3 -c "from django.core.management.utils import get_random_secret_key; prin
 Or use this online generator: https://djecrety.ir/
 
 ### 6. GOOGLE_API_KEY
-**Value:** `AIzaSyDWU0U4C7-9rlRfC8ODSjbvjHKKo55AeSc` (your existing key)
+**Value:** `YOUR_GOOGLE_API_KEY_HERE` (your existing key)
 **Purpose:** Google Maps API access
 
 ### 7. GOOGLE_CLIENT_ID

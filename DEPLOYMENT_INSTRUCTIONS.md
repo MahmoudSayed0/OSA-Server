@@ -165,7 +165,7 @@ openssl rand -base64 32
 | `VPS_SSH_KEY` | Your SSH private key (from `cat ~/.ssh/id_ed25519`) |
 | `POSTGRES_PASSWORD` | `R7u!xVw2sKp@3yNq` (or generate new one) |
 | `DJANGO_SECRET_KEY` | Generated Django secret key |
-| `GOOGLE_API_KEY` | `AIzaSyDWU0U4C7-9rlRfC8ODSjbvjHKKo55AeSc` |
+| `GOOGLE_API_KEY` | `YOUR_GOOGLE_API_KEY_HERE` |
 | `GOOGLE_CLIENT_ID` | `891175220269-btcbo6gf0jouraq9m936s8gnqdmo9hbj.apps.googleusercontent.com` |
 
 ### Step 2.3: Add Secrets to Frontend Repository

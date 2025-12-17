@@ -199,7 +199,7 @@ PGVECTOR_CONNECTION=postgresql+psycopg2://pgadmin_z9f3:YOUR_URL_ENCODED_PASSWORD
 # =====================================
 # Google AI (Gemini API)
 # =====================================
-GOOGLE_API_KEY=AIzaSyDWU0U4C7-9rlRfC8ODSjbvjHKKo55AeSc
+GOOGLE_API_KEY=YOUR_GOOGLE_API_KEY_HERE
 
 # =====================================
 # Google OAuth
