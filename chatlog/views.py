@@ -607,10 +607,31 @@ def ask_agent(request):
             if chat_history:
                 chat_history = "This is the last conversation history:\n" + chat_history
 
-            # Run AI agent
-            agent_graph = construct_agent_graph(collection_name)
-            messages = agent_graph.invoke({"messages": [("user", user_input), ("system", chat_history)]})
-            ai_response = messages["messages"][-1].content
+            # Run AI agent with timeout (60 seconds)
+            import signal
+            from contextlib import contextmanager
+
+            class TimeoutException(Exception):
+                pass
+
+            @contextmanager
+            def time_limit(seconds):
+                def signal_handler(signum, frame):
+                    raise TimeoutException("Agent processing timed out")
+                signal.signal(signal.SIGALRM, signal_handler)
+                signal.alarm(seconds)
+                try:
+                    yield
+                finally:
+                    signal.alarm(0)
+
+            try:
+                agent_graph = construct_agent_graph(collection_name)
+                with time_limit(60):  # 60 second timeout for agent processing
+                    messages = agent_graph.invoke({"messages": [("user", user_input), ("system", chat_history)]})
+                    ai_response = messages["messages"][-1].content
+            except TimeoutException:
+                ai_response = "I apologize, but the analysis is taking longer than expected. This usually happens with complex queries or when searching through many documents. Please try:\n\n1. Breaking your question into smaller parts\n2. Being more specific about what you need\n3. Waiting a moment and trying again\n\nThe system will continue processing your request in the background."
 
             # Deduct credits based on actual usage (subscription)
             credits_used = 0
