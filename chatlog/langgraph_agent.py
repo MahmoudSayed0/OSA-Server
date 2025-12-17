@@ -1,4 +1,5 @@
 import os
+from urllib.parse import quote_plus
 from transformers import pipeline
 from langgraph.prebuilt import create_react_agent
 from langchain_community.tools import tool
@@ -10,8 +11,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 # ----------------------------
 # CONFIG
 # ----------------------------
+# URL-encode the password to handle special characters like @ and !
+_postgres_password = quote_plus(os.getenv('POSTGRES_PASSWORD', ''))
 CONNECTION_STRING = (
-    f"postgresql+psycopg2://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD_FLAT')}@{os.getenv('POSTGRES_HOST', 'db')}:{os.getenv('POSTGRES_PORT', 5432)}/{os.getenv('POSTGRES_DB')}"
+    f"postgresql+psycopg2://{os.getenv('POSTGRES_USER')}:{_postgres_password}@{os.getenv('POSTGRES_HOST', 'db')}:{os.getenv('POSTGRES_PORT', 5432)}/{os.getenv('POSTGRES_DB')}"
 )
 
 print("CONNECTION_STRING")
