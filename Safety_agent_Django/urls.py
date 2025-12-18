@@ -16,10 +16,32 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.http import JsonResponse
+
+def health_check(request):
+    """Basic health check - Django is running"""
+    return JsonResponse({"status": "healthy"})
+
+def ready_check(request):
+    """Readiness check - ML models are loaded"""
+    try:
+        # Try importing the agent module to ensure models are loaded
+        from chatlog.langgraph_agent import EMBEDDINGS
+        # Test that embeddings are actually callable
+        _ = EMBEDDINGS
+        return JsonResponse({"status": "ready", "models_loaded": True})
+    except Exception as e:
+        return JsonResponse(
+            {"status": "not_ready", "error": str(e)},
+            status=503  # Service Unavailable
+        )
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('accounts.urls')),  # Authentication endpoints
     path('api/subscription/', include('subscriptions.urls')),  # Subscription endpoints
     path("chatlog/", include("chatlog.urls")),
+    # Health checks
+    path('health/', health_check, name='health_check'),
+    path('ready/', ready_check, name='ready_check'),
 ]
