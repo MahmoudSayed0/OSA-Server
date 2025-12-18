@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender-dev \
     libgomp1 \
     git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # set working directory
