@@ -30,7 +30,7 @@ def set_auth_cookies(response, tokens):
         'access_token',
         tokens['access'],
         httponly=True,
-        secure=not settings.DEBUG,  # True in production
+        secure=False,  # TODO: Set to True when HTTPS is configured
         samesite='Lax',
         max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
         path='/',
@@ -40,7 +40,7 @@ def set_auth_cookies(response, tokens):
         'refresh_token',
         tokens['refresh'],
         httponly=True,
-        secure=not settings.DEBUG,
+        secure=False,  # TODO: Set to True when HTTPS is configured
         samesite='Lax',
         max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
         path='/',
