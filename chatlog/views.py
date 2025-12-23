@@ -2026,3 +2026,114 @@ def get_foundation_stats(request):
 
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+
+# ===================================
+# DATABASE STATISTICS (ADMIN)
+# ===================================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_db_stats(request):
+    """
+    Admin endpoint: Get vector database statistics.
+    GET /chatlog/admin/db-stats/
+
+    Returns:
+    - total_chunks: Total number of vector chunks in database
+    - db_size: Human-readable database size
+    - collections: List of all vector collections
+    - recent_chunks: Sample of recent chunks for debugging
+    """
+    try:
+        # Check admin access
+        is_admin, auth_user, error_response = is_admin_user(request)
+        if error_response:
+            return error_response
+
+        from django.db import connection
+
+        stats = {
+            "total_chunks": 0,
+            "db_size": "Unknown",
+            "collections": [],
+            "recent_chunks": [],
+            "user_stats": {}
+        }
+
+        with connection.cursor() as cursor:
+            # 1. Total chunks in vector store
+            try:
+                cursor.execute("SELECT count(*) FROM langchain_pg_embedding")
+                stats["total_chunks"] = cursor.fetchone()[0]
+            except Exception as e:
+                stats["total_chunks_error"] = str(e)
+
+            # 2. Database size
+            try:
+                cursor.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")
+                stats["db_size"] = cursor.fetchone()[0]
+            except Exception as e:
+                stats["db_size_error"] = str(e)
+
+            # 3. Collections list with chunk counts
+            try:
+                cursor.execute("""
+                    SELECT c.name, c.uuid, COUNT(e.id) as chunk_count
+                    FROM langchain_pg_collection c
+                    LEFT JOIN langchain_pg_embedding e ON c.uuid = e.collection_id
+                    GROUP BY c.name, c.uuid
+                    ORDER BY chunk_count DESC
+                """)
+                stats["collections"] = [
+                    {"name": r[0], "uuid": str(r[1]), "chunk_count": r[2]}
+                    for r in cursor.fetchall()
+                ]
+            except Exception as e:
+                stats["collections_error"] = str(e)
+
+            # 4. Sample of recent chunks (for debugging)
+            try:
+                cursor.execute("""
+                    SELECT document, cmetadata
+                    FROM langchain_pg_embedding
+                    ORDER BY id DESC
+                    LIMIT 5
+                """)
+                for r in cursor.fetchall():
+                    content = r[0] if r[0] else ""
+                    stats["recent_chunks"].append({
+                        "content": content[:200] + "..." if len(content) > 200 else content,
+                        "metadata": r[1]
+                    })
+            except Exception as e:
+                stats["recent_chunks_error"] = str(e)
+
+        # 5. User statistics from Django models
+        total_users = UserKnowledgeBase.objects.count()
+        total_pdfs = UploadedPDF.objects.count()
+        completed_pdfs = UploadedPDF.objects.filter(status='completed').count()
+        failed_pdfs = UploadedPDF.objects.filter(status='failed').count()
+
+        stats["user_stats"] = {
+            "total_users": total_users,
+            "total_pdfs": total_pdfs,
+            "completed_pdfs": completed_pdfs,
+            "failed_pdfs": failed_pdfs,
+            "processing_pdfs": UploadedPDF.objects.filter(status='processing').count()
+        }
+
+        # 6. Foundation KB stats
+        foundation_docs = FoundationDocument.objects.filter(is_active=True)
+        stats["foundation_stats"] = {
+            "total_documents": foundation_docs.count(),
+            "total_chunks": sum(doc.chunks_count for doc in foundation_docs.filter(status='completed')),
+            "completed": foundation_docs.filter(status='completed').count(),
+            "failed": foundation_docs.filter(status='failed').count()
+        }
+
+        return JsonResponse(stats)
+
+    except Exception as e:
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)

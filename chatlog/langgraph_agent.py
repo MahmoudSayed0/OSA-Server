@@ -204,6 +204,21 @@ def get_foundation_vectorstore():
     return vector_store(FOUNDATION_COLLECTION)
 
 
+def is_summary_request(query: str) -> bool:
+    """
+    Detect if user is asking for a summary/overview.
+    Used to dynamically adjust retrieval depth (more context for summaries).
+    """
+    keywords = [
+        "summarize", "summary", "overview", "key points", "highlights",
+        "what are the main", "give me an overview", "tell me about all",
+        "explain everything", "main topics", "brief overview", "quick summary",
+        "summarise", "sum up", "recap", "outline", "general overview"
+    ]
+    query_lower = query.lower()
+    return any(keyword in query_lower for keyword in keywords)
+
+
 def construct_agent_graph(collection_name):
     """
     Construct the LangGraph agent with dual retrieval capability.
@@ -230,9 +245,14 @@ def construct_agent_graph(collection_name):
         """
         print(f"[TOOL CALLED] dual_retriever_tool with query: '{query[:50]}...'")
 
+        # DYNAMIC K VALUE: Retrieve more context for summary requests
+        is_summary = is_summary_request(query)
+        k = 15 if is_summary else 4
+        print(f"[RETRIEVAL] Using k={k} (summary_request={is_summary})")
+
         # Search Foundation KB (official regulations)
         try:
-            foundation_results = foundation_vectorstore.similarity_search(query, k=4)
+            foundation_results = foundation_vectorstore.similarity_search(query, k=k)
             print(f"[FOUNDATION KB] Found {len(foundation_results)} regulation chunks")
         except Exception as e:
             print(f"[FOUNDATION KB] Error: {e}")
@@ -240,7 +260,7 @@ def construct_agent_graph(collection_name):
 
         # Search User's documents
         try:
-            user_results = user_vectorstore.similarity_search(query, k=4)
+            user_results = user_vectorstore.similarity_search(query, k=k)
             print(f"[USER DOCS] Found {len(user_results)} document chunks")
         except Exception as e:
             print(f"[USER DOCS] Error: {e}")

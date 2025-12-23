@@ -6,7 +6,9 @@ from .views import (
     get_document_summary, submit_feedback, get_feedback_stats,
     # Foundation KB Admin
     upload_foundation_pdf, list_foundation_documents, delete_foundation_document,
-    get_foundation_document_status, get_foundation_stats
+    get_foundation_document_status, get_foundation_stats,
+    # Database Stats
+    get_db_stats
 )
 from .admin_views import (
     # Authentication
@@ -80,6 +82,9 @@ urlpatterns = [
     path("admin/dashboard/user-growth/", user_growth_data, name="user_growth_data"),
     path("admin/dashboard/document-uploads/", document_upload_data, name="document_upload_data"),
     path("admin/dashboard/recent-activity/", recent_activity, name="recent_activity"),
+
+    # Database Statistics (Admin)
+    path("admin/db-stats/", get_db_stats, name="get_db_stats"),
 
     # Advanced Analytics (Charts)
     path("admin/analytics/revenue-trends/", revenue_trends, name="revenue_trends"),
