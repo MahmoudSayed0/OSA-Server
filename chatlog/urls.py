@@ -7,8 +7,8 @@ from .views import (
     # Foundation KB Admin
     upload_foundation_pdf, list_foundation_documents, delete_foundation_document,
     get_foundation_document_status, get_foundation_stats,
-    # Database Stats
-    get_db_stats
+    # Database Stats & RAG Evaluation
+    get_db_stats, run_rag_evaluation
 )
 from .admin_views import (
     # Authentication
@@ -85,6 +85,9 @@ urlpatterns = [
 
     # Database Statistics (Admin)
     path("admin/db-stats/", get_db_stats, name="get_db_stats"),
+
+    # RAG Evaluation (Admin)
+    path("admin/rag-evaluation/", run_rag_evaluation, name="run_rag_evaluation"),
 
     # Advanced Analytics (Charts)
     path("admin/analytics/revenue-trends/", revenue_trends, name="revenue_trends"),

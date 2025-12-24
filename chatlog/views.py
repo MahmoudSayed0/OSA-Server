@@ -2137,3 +2137,328 @@ def get_db_stats(request):
     except Exception as e:
         traceback.print_exc()
         return JsonResponse({"error": str(e)}, status=500)
+
+
+# ===================================
+# RAG EVALUATION (ADMIN)
+# ===================================
+
+# Evaluation test dataset
+RAG_EVAL_DATA = [
+    {
+        "id": 1,
+        "question": "What PPE is required for underground mining?",
+        "expected_topics": ["hard hat", "helmet", "safety glasses", "boots", "vest", "gloves"],
+        "category": "PPE",
+        "is_summary": False
+    },
+    {
+        "id": 2,
+        "question": "What are the MSHA requirements for mine inspections?",
+        "expected_topics": ["inspection", "cfr", "msha", "quarterly", "hazard", "compliance"],
+        "category": "Regulations",
+        "is_summary": False
+    },
+    {
+        "id": 3,
+        "question": "Give me a summary of all fire safety procedures",
+        "expected_topics": ["fire", "evacuation", "extinguisher", "alarm", "emergency", "escape"],
+        "category": "Fire Safety",
+        "is_summary": True
+    },
+    {
+        "id": 4,
+        "question": "What are the ventilation requirements in underground mines?",
+        "expected_topics": ["ventilation", "air", "methane", "cfr", "oxygen", "dust"],
+        "category": "Ventilation",
+        "is_summary": False
+    },
+    {
+        "id": 5,
+        "question": "Summarize the key points about electrical safety in mining",
+        "expected_topics": ["electrical", "grounding", "lockout", "tagout", "shock", "cable"],
+        "category": "Electrical Safety",
+        "is_summary": True
+    },
+    {
+        "id": 6,
+        "question": "What should I do in case of a roof fall emergency?",
+        "expected_topics": ["roof", "fall", "emergency", "evacuate", "rescue", "support"],
+        "category": "Emergency Response",
+        "is_summary": False
+    },
+    {
+        "id": 7,
+        "question": "Provide an overview of training requirements for new miners",
+        "expected_topics": ["training", "hours", "certification", "annual", "refresher", "msha"],
+        "category": "Training",
+        "is_summary": True
+    },
+]
+
+# Intent detection test cases
+INTENT_TEST_CASES = [
+    ("What is PPE?", False),
+    ("Give me a summary", True),
+    ("Summarize the documents", True),
+    ("What are the key points?", True),
+    ("Explain the regulation", False),
+    ("Provide an overview", True),
+    ("Tell me about fire safety", False),
+    ("Tell me about all safety procedures", True),
+]
+
+
+def _calculate_topic_coverage(answer: str, expected_topics: list) -> tuple:
+    """Calculate what percentage of expected topics are mentioned in the answer."""
+    answer_lower = answer.lower()
+    found_topics = []
+    missing_topics = []
+
+    for topic in expected_topics:
+        if topic.lower() in answer_lower:
+            found_topics.append(topic)
+        else:
+            missing_topics.append(topic)
+
+    coverage = len(found_topics) / len(expected_topics) if expected_topics else 0
+    return coverage, found_topics, missing_topics
+
+
+def _evaluate_response_quality(answer: str) -> dict:
+    """Evaluate response quality based on structure and content."""
+    quality = {
+        "has_structure": False,
+        "has_citations": False,
+        "has_action_items": False,
+        "appropriate_length": False,
+        "score": 0.0
+    }
+
+    # Check for structured formatting
+    if any(marker in answer for marker in ["##", "**", "1.", "- ", "* "]):
+        quality["has_structure"] = True
+        quality["score"] += 0.25
+
+    # Check for regulation citations
+    if any(marker in answer.upper() for marker in ["CFR", "MSHA", "OSHA", "30 CFR"]):
+        quality["has_citations"] = True
+        quality["score"] += 0.25
+
+    # Check for action items or recommendations
+    if any(marker in answer.lower() for marker in ["recommend", "action", "should", "must", "required"]):
+        quality["has_action_items"] = True
+        quality["score"] += 0.25
+
+    # Check for appropriate length (not too short, not too long)
+    word_count = len(answer.split())
+    if 50 <= word_count <= 1500:
+        quality["appropriate_length"] = True
+        quality["score"] += 0.25
+
+    quality["word_count"] = word_count
+    return quality
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def run_rag_evaluation(request):
+    """
+    Admin endpoint: Run RAG evaluation framework.
+    GET /chatlog/admin/rag-evaluation/ - Get evaluation status/info
+    POST /chatlog/admin/rag-evaluation/ - Run full evaluation
+
+    Optional POST body:
+    {
+        "collection": "foundation_mining_kb",  // Collection to test against
+        "test_ids": [1, 2, 3]  // Specific tests to run (optional, runs all if not provided)
+    }
+
+    Returns comprehensive evaluation results for dashboard display.
+    """
+    from datetime import datetime
+    from .langgraph_agent import is_summary_request
+
+    try:
+        # Check admin access
+        is_admin_check, auth_user, error_response = is_admin_user(request)
+        if error_response:
+            return error_response
+
+        # GET request - return evaluation info
+        if request.method == "GET":
+            return JsonResponse({
+                "status": "ready",
+                "available_tests": len(RAG_EVAL_DATA),
+                "test_categories": list(set(t["category"] for t in RAG_EVAL_DATA)),
+                "intent_test_cases": len(INTENT_TEST_CASES),
+                "description": "RAG Evaluation Framework for Safety Agent",
+                "endpoints": {
+                    "GET": "Get evaluation info",
+                    "POST": "Run evaluation (optional: collection, test_ids)"
+                }
+            })
+
+        # POST request - run evaluation
+        # Parse request body
+        try:
+            body = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            body = {}
+
+        collection_name = body.get("collection", FOUNDATION_COLLECTION)
+        test_ids = body.get("test_ids", None)  # None means run all
+
+        # Initialize results structure
+        results = {
+            "timestamp": datetime.now().isoformat(),
+            "collection": collection_name,
+            "intent_detection": {
+                "tests": [],
+                "passed": 0,
+                "total": 0,
+                "status": "pending"
+            },
+            "rag_tests": {
+                "tests": [],
+                "passed": 0,
+                "total": 0,
+                "avg_coverage": 0,
+                "avg_quality": 0,
+                "status": "pending"
+            },
+            "overall": {
+                "status": "pending",
+                "passed": False
+            }
+        }
+
+        # ===================================
+        # PHASE 1: Intent Detection Tests
+        # ===================================
+        intent_passed = 0
+        for query, expected in INTENT_TEST_CASES:
+            actual = is_summary_request(query)
+            passed = actual == expected
+            if passed:
+                intent_passed += 1
+
+            results["intent_detection"]["tests"].append({
+                "query": query,
+                "expected": expected,
+                "actual": actual,
+                "passed": passed
+            })
+
+        results["intent_detection"]["passed"] = intent_passed
+        results["intent_detection"]["total"] = len(INTENT_TEST_CASES)
+        results["intent_detection"]["status"] = "pass" if intent_passed == len(INTENT_TEST_CASES) else "fail"
+
+        # ===================================
+        # PHASE 2: RAG Quality Tests
+        # ===================================
+        try:
+            # Initialize agent
+            agent = construct_agent_graph(collection_name)
+
+            # Filter tests if specific IDs requested
+            test_data = RAG_EVAL_DATA
+            if test_ids:
+                test_data = [t for t in RAG_EVAL_DATA if t["id"] in test_ids]
+
+            total_coverage = 0
+            total_quality = 0
+            rag_passed = 0
+
+            for test_case in test_data:
+                test_result = {
+                    "id": test_case["id"],
+                    "category": test_case["category"],
+                    "question": test_case["question"],
+                    "is_summary": test_case["is_summary"],
+                    "status": "pending"
+                }
+
+                try:
+                    # Invoke agent with timeout consideration
+                    response = agent.invoke({
+                        "messages": [HumanMessage(content=test_case["question"])]
+                    })
+                    answer = response["messages"][-1].content
+
+                    # Calculate metrics
+                    coverage, found, missing = _calculate_topic_coverage(
+                        answer, test_case["expected_topics"]
+                    )
+                    quality = _evaluate_response_quality(answer)
+
+                    # Combined score (60% coverage, 40% quality)
+                    combined_score = (coverage * 0.6) + (quality["score"] * 0.4)
+                    passed = combined_score >= 0.5
+
+                    if passed:
+                        rag_passed += 1
+
+                    total_coverage += coverage
+                    total_quality += quality["score"]
+
+                    test_result.update({
+                        "status": "pass" if passed else "fail",
+                        "coverage": {
+                            "score": round(coverage * 100, 1),
+                            "found": found,
+                            "missing": missing,
+                            "expected": test_case["expected_topics"]
+                        },
+                        "quality": {
+                            "score": round(quality["score"] * 100, 1),
+                            "has_structure": quality["has_structure"],
+                            "has_citations": quality["has_citations"],
+                            "has_action_items": quality["has_action_items"],
+                            "appropriate_length": quality["appropriate_length"],
+                            "word_count": quality["word_count"]
+                        },
+                        "combined_score": round(combined_score * 100, 1),
+                        "answer_preview": answer[:500] + "..." if len(answer) > 500 else answer
+                    })
+
+                except Exception as e:
+                    test_result.update({
+                        "status": "error",
+                        "error": str(e)
+                    })
+
+                results["rag_tests"]["tests"].append(test_result)
+
+            # Calculate averages
+            num_tests = len(test_data)
+            results["rag_tests"]["passed"] = rag_passed
+            results["rag_tests"]["total"] = num_tests
+            results["rag_tests"]["avg_coverage"] = round((total_coverage / num_tests) * 100, 1) if num_tests > 0 else 0
+            results["rag_tests"]["avg_quality"] = round((total_quality / num_tests) * 100, 1) if num_tests > 0 else 0
+            results["rag_tests"]["status"] = "pass" if rag_passed >= (num_tests * 0.7) else "fail"
+
+        except Exception as e:
+            results["rag_tests"]["status"] = "error"
+            results["rag_tests"]["error"] = str(e)
+
+        # ===================================
+        # OVERALL STATUS
+        # ===================================
+        intent_ok = results["intent_detection"]["status"] == "pass"
+        rag_ok = results["rag_tests"]["status"] == "pass"
+
+        results["overall"]["status"] = "pass" if (intent_ok and rag_ok) else "fail"
+        results["overall"]["passed"] = intent_ok and rag_ok
+        results["overall"]["summary"] = {
+            "intent_detection": f"{results['intent_detection']['passed']}/{results['intent_detection']['total']} passed",
+            "rag_tests": f"{results['rag_tests']['passed']}/{results['rag_tests']['total']} passed",
+            "avg_coverage": f"{results['rag_tests']['avg_coverage']}%",
+            "avg_quality": f"{results['rag_tests']['avg_quality']}%"
+        }
+
+        return JsonResponse(results)
+
+    except Exception as e:
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
