@@ -33,6 +33,11 @@ services:
       - "8000:8000"
     env_file:
       - ./.postgres
+      - ../.env
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - PGVECTOR_CONNECTION=postgresql+psycopg2://pgadmin_z9f3:R7u%21xVw2sKp%403yNq@db:5432/oinride
     depends_on:
       - db
     restart: always

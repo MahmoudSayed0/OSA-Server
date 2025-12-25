@@ -153,7 +153,7 @@ def dashboard_stats(request):
             date_joined__gte=thirty_days_ago
         ).count()
         new_documents_30d = UploadedPDF.objects.filter(
-            created_at__gte=thirty_days_ago
+            uploaded_at__gte=thirty_days_ago
         ).count()
         new_sessions_30d = ChatSession.objects.filter(
             created_at__gte=thirty_days_ago
