@@ -4,6 +4,7 @@ from django.http import JsonResponse, FileResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.views.decorators.http import require_http_methods
+from .decorators import require_staff
 from django.db import transaction
 from django.utils.timezone import now
 from django.conf import settings
@@ -1751,6 +1752,7 @@ def process_foundation_pdf_background(doc_id, file_path, filename, category, reg
 
 
 @csrf_exempt
+@require_staff
 @require_POST
 def upload_foundation_pdf(request):
     """
@@ -1765,10 +1767,6 @@ def upload_foundation_pdf(request):
     - description: Brief description (optional)
     """
     try:
-        # Check admin access
-        is_admin, auth_user, error_response = is_admin_user(request)
-        if error_response:
-            return error_response
 
         if "file" not in request.FILES:
             return JsonResponse({"error": "No file uploaded"}, status=400)
@@ -1849,6 +1847,7 @@ def upload_foundation_pdf(request):
 
 
 @csrf_exempt
+@require_staff
 @require_http_methods(["GET"])
 def list_foundation_documents(request):
     """
@@ -1856,11 +1855,6 @@ def list_foundation_documents(request):
     GET /chatlog/admin/foundation/list/
     """
     try:
-        # Check admin access
-        is_admin, auth_user, error_response = is_admin_user(request)
-        if error_response:
-            return error_response
-
         documents = FoundationDocument.objects.filter(is_active=True)
 
         docs_data = [{
@@ -1899,6 +1893,7 @@ def list_foundation_documents(request):
 
 
 @csrf_exempt
+@require_staff
 @require_http_methods(["DELETE", "POST"])
 def delete_foundation_document(request, doc_id):
     """
@@ -1907,11 +1902,6 @@ def delete_foundation_document(request, doc_id):
     OR POST /chatlog/admin/foundation/<doc_id>/delete/
     """
     try:
-        # Check admin access
-        is_admin, auth_user, error_response = is_admin_user(request)
-        if error_response:
-            return error_response
-
         try:
             foundation_doc = FoundationDocument.objects.get(id=doc_id)
         except FoundationDocument.DoesNotExist:
@@ -1963,6 +1953,7 @@ def delete_foundation_document(request, doc_id):
 
 
 @csrf_exempt
+@require_staff
 @require_http_methods(["GET"])
 def get_foundation_document_status(request, doc_id):
     """
@@ -1970,11 +1961,6 @@ def get_foundation_document_status(request, doc_id):
     GET /chatlog/admin/foundation/status/<doc_id>/
     """
     try:
-        # Check admin access
-        is_admin, auth_user, error_response = is_admin_user(request)
-        if error_response:
-            return error_response
-
         try:
             doc = FoundationDocument.objects.get(id=doc_id)
         except FoundationDocument.DoesNotExist:

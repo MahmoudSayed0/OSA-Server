@@ -238,8 +238,8 @@ def document_upload_data(request):
         # Get daily document upload counts
         upload_data = (
             UploadedPDF.objects
-            .filter(created_at__gte=thirty_days_ago)
-            .annotate(date=TruncDate('created_at'))
+            .filter(uploaded_at__gte=thirty_days_ago)
+            .annotate(date=TruncDate('uploaded_at'))
             .values('date')
             .annotate(count=Count('id'))
             .order_by('date')
@@ -288,28 +288,28 @@ def recent_activity(request):
         ]
 
         # Get recent document uploads
-        recent_docs = UploadedPDF.objects.order_by('-created_at')[:15]
+        recent_docs = UploadedPDF.objects.select_related('user_knowledge_base').order_by('-uploaded_at')[:15]
         doc_activities = [
             {
                 'type': 'document_upload',
                 'document_id': doc.id,
                 'filename': doc.filename,
-                'username': doc.user.username,
-                'timestamp': doc.created_at.isoformat(),
-                'description': f'{doc.user.username} uploaded {doc.filename}'
+                'username': doc.user_knowledge_base.username if doc.user_knowledge_base else 'Unknown',
+                'timestamp': doc.uploaded_at.isoformat(),
+                'description': f'{doc.user_knowledge_base.username if doc.user_knowledge_base else "Unknown"} uploaded {doc.filename}'
             }
             for doc in recent_docs
         ]
 
         # Get recent chat sessions
-        recent_sessions = ChatSession.objects.order_by('-created_at')[:15]
+        recent_sessions = ChatSession.objects.select_related('user_knowledge_base').order_by('-created_at')[:15]
         session_activities = [
             {
                 'type': 'chat_session',
                 'session_id': session.session_id,
-                'username': session.username,
+                'username': session.user_knowledge_base.username if session.user_knowledge_base else 'Unknown',
                 'timestamp': session.created_at.isoformat(),
-                'description': f'{session.username} started: {session.title}'
+                'description': f'{session.user_knowledge_base.username if session.user_knowledge_base else "Unknown"} started: {session.title}'
             }
             for session in recent_sessions
         ]
@@ -1278,13 +1278,13 @@ def user_activity_history(request, user_id):
 
         # Get chat sessions as activity
         sessions = ChatSession.objects.filter(
-            user=user
+            user_knowledge_base__user=user
         ).order_by('-created_at')[:50]
 
         # Get document uploads as activity
         documents = UploadedPDF.objects.filter(
-            user_kb__user=user
-        ).order_by('-created_at')[:50]
+            user_knowledge_base__user=user
+        ).order_by('-uploaded_at')[:50]
 
         # Combine and sort activities
         activities = []
@@ -1302,7 +1302,7 @@ def user_activity_history(request, user_id):
         for doc in documents:
             activities.append({
                 'type': 'document_upload',
-                'timestamp': doc.created_at.isoformat(),
+                'timestamp': doc.uploaded_at.isoformat(),
                 'description': f'Uploaded document: {doc.filename}',
                 'details': f'{doc.file_size / 1024:.1f} KB',
                 'document_id': doc.id
@@ -1503,8 +1503,8 @@ def user_documents_list(request, user_id):
         try:
             user_kb = UserKnowledgeBase.objects.get(user=user)
             documents = UploadedPDF.objects.filter(
-                user_kb=user_kb
-            ).order_by('-created_at')
+                user_knowledge_base=user_kb
+            ).order_by('-uploaded_at')
 
             documents_list = []
             for doc in documents:
@@ -1515,8 +1515,7 @@ def user_documents_list(request, user_id):
                     'file_size_mb': round(doc.file_size / (1024 * 1024), 2),
                     'chunks_count': doc.chunks_count,
                     'status': doc.status,
-                    'created_at': doc.created_at.isoformat(),
-                    'updated_at': doc.updated_at.isoformat()
+                    'uploaded_at': doc.uploaded_at.isoformat()
                 })
 
             total_storage = sum(doc.file_size for doc in documents)
