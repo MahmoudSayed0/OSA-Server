@@ -2211,6 +2211,45 @@ def _calculate_topic_coverage(answer: str, expected_topics: list) -> tuple:
     return coverage, found_topics, missing_topics
 
 
+def _calculate_semantic_similarity(query: str, answer: str, expected_topics: list) -> dict:
+    """Calculate semantic similarity using sentence-transformers."""
+    try:
+        from sentence_transformers import SentenceTransformer, util
+
+        # Use the same model as embeddings
+        model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+
+        # Create reference text from expected topics
+        reference_text = f"The answer should cover: {', '.join(expected_topics)}"
+
+        # Encode texts
+        query_embedding = model.encode(query, convert_to_tensor=True)
+        answer_embedding = model.encode(answer, convert_to_tensor=True)
+        reference_embedding = model.encode(reference_text, convert_to_tensor=True)
+
+        # Calculate similarities
+        query_answer_sim = float(util.cos_sim(query_embedding, answer_embedding)[0][0])
+        answer_reference_sim = float(util.cos_sim(answer_embedding, reference_embedding)[0][0])
+
+        # Combined semantic score (relevance to query + coverage of expected topics)
+        semantic_score = (query_answer_sim * 0.4) + (answer_reference_sim * 0.6)
+
+        return {
+            "query_relevance": round(query_answer_sim * 100, 1),
+            "topic_alignment": round(answer_reference_sim * 100, 1),
+            "semantic_score": round(semantic_score * 100, 1),
+            "available": True
+        }
+    except Exception as e:
+        return {
+            "query_relevance": 0,
+            "topic_alignment": 0,
+            "semantic_score": 0,
+            "available": False,
+            "error": str(e)
+        }
+
+
 def _evaluate_response_quality(answer: str) -> dict:
     """Evaluate response quality based on structure and content."""
     quality = {
@@ -2311,6 +2350,7 @@ def run_rag_evaluation(request):
                 "total": 0,
                 "avg_coverage": 0,
                 "avg_quality": 0,
+                "avg_semantic": 0,
                 "status": "pending"
             },
             "overall": {
@@ -2354,6 +2394,7 @@ def run_rag_evaluation(request):
 
             total_coverage = 0
             total_quality = 0
+            total_semantic = 0
             rag_passed = 0
 
             for test_case in test_data:
@@ -2378,8 +2419,14 @@ def run_rag_evaluation(request):
                     )
                     quality = _evaluate_response_quality(answer)
 
-                    # Combined score (60% coverage, 40% quality)
-                    combined_score = (coverage * 0.6) + (quality["score"] * 0.4)
+                    # Calculate semantic similarity (DeepEval-style metric)
+                    semantic = _calculate_semantic_similarity(
+                        test_case["question"], answer, test_case["expected_topics"]
+                    )
+
+                    # Combined score (40% coverage, 30% quality, 30% semantic)
+                    semantic_factor = (semantic["semantic_score"] / 100) if semantic["available"] else 0
+                    combined_score = (coverage * 0.4) + (quality["score"] * 0.3) + (semantic_factor * 0.3)
                     passed = combined_score >= 0.5
 
                     if passed:
@@ -2387,6 +2434,7 @@ def run_rag_evaluation(request):
 
                     total_coverage += coverage
                     total_quality += quality["score"]
+                    total_semantic += semantic["semantic_score"] if semantic["available"] else 0
 
                     test_result.update({
                         "status": "pass" if passed else "fail",
@@ -2404,6 +2452,7 @@ def run_rag_evaluation(request):
                             "appropriate_length": quality["appropriate_length"],
                             "word_count": quality["word_count"]
                         },
+                        "semantic": semantic,  # DeepEval-style semantic similarity
                         "combined_score": round(combined_score * 100, 1),
                         "answer_preview": answer[:500] + "..." if len(answer) > 500 else answer
                     })
@@ -2422,6 +2471,7 @@ def run_rag_evaluation(request):
             results["rag_tests"]["total"] = num_tests
             results["rag_tests"]["avg_coverage"] = round((total_coverage / num_tests) * 100, 1) if num_tests > 0 else 0
             results["rag_tests"]["avg_quality"] = round((total_quality / num_tests) * 100, 1) if num_tests > 0 else 0
+            results["rag_tests"]["avg_semantic"] = round(total_semantic / num_tests, 1) if num_tests > 0 else 0
             results["rag_tests"]["status"] = "pass" if rag_passed >= (num_tests * 0.7) else "fail"
 
         except Exception as e:
@@ -2440,7 +2490,8 @@ def run_rag_evaluation(request):
             "intent_detection": f"{results['intent_detection']['passed']}/{results['intent_detection']['total']} passed",
             "rag_tests": f"{results['rag_tests']['passed']}/{results['rag_tests']['total']} passed",
             "avg_coverage": f"{results['rag_tests']['avg_coverage']}%",
-            "avg_quality": f"{results['rag_tests']['avg_quality']}%"
+            "avg_quality": f"{results['rag_tests']['avg_quality']}%",
+            "avg_semantic": f"{results['rag_tests']['avg_semantic']}%"
         }
 
         return JsonResponse(results)
