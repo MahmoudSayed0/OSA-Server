@@ -44,6 +44,7 @@ class UploadedPDF(models.Model):
     filename = models.CharField(max_length=255)
     file_path = models.CharField(max_length=500, null=True, blank=True)  # Path to saved PDF file
     file_size = models.BigIntegerField()  # in bytes
+    page_count = models.IntegerField(default=0)  # Number of pages in PDF
     chunks_count = models.IntegerField(default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='uploading')
     error_message = models.TextField(null=True, blank=True)  # Store error if failed

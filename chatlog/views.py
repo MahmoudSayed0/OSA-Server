@@ -274,6 +274,7 @@ def process_pdf_background(pdf_id, file_path, filename, collection_name):
 
         documents = []
         parser_used = "pypdf"
+        page_count = 0  # Track number of pages in PDF
 
         # OPTIMIZATION: Try fast parsers first, then Docling for complex PDFs
 
@@ -282,8 +283,9 @@ def process_pdf_background(pdf_id, file_path, filename, collection_name):
             try:
                 print(f"[PDF Processing] Trying PyMuPDF (fast) for: {filename}")
                 pdf_doc = fitz.open(str(file_path))
+                page_count = len(pdf_doc)  # Capture page count
                 full_text = ""
-                for page_num in range(len(pdf_doc)):
+                for page_num in range(page_count):
                     page = pdf_doc[page_num]
                     full_text += page.get_text() + "\n\n"
                 pdf_doc.close()
@@ -305,6 +307,8 @@ def process_pdf_background(pdf_id, file_path, filename, collection_name):
                 print(f"[PDF Processing] Trying PyPDFLoader for: {filename}")
                 loader = PyPDFLoader(str(file_path))
                 documents = loader.load()
+                if page_count == 0:
+                    page_count = len(documents)  # Each document is a page
                 parser_used = "pypdf"
                 print(f"[PDF Processing] PyPDFLoader extracted {len(documents)} pages")
             except Exception as e:
@@ -347,6 +351,8 @@ def process_pdf_background(pdf_id, file_path, filename, collection_name):
                 print(f"[PDF Processing] Using OCR for scanned PDF: {filename}")
                 # Convert PDF pages to images
                 images = convert_from_path(str(file_path), dpi=200)
+                if page_count == 0:
+                    page_count = len(images)  # Each image is a page
                 print(f"[PDF Processing] Converted {len(images)} pages to images")
 
                 full_text = ""
@@ -412,10 +418,11 @@ def process_pdf_background(pdf_id, file_path, filename, collection_name):
 
         # Update PDF record
         uploaded_pdf.chunks_count = len(docs)
+        uploaded_pdf.page_count = page_count
         uploaded_pdf.status = 'completed'
         uploaded_pdf.save()
 
-        print(f"[PDF Processing] Completed: {filename} - {len(docs)} chunks, parser: {parser_used}")
+        print(f"[PDF Processing] Completed: {filename} - {len(docs)} chunks, {page_count} pages, parser: {parser_used}")
 
     except Exception as e:
         print(f"[PDF Processing] Error: {e}")
@@ -752,6 +759,7 @@ def list_pdfs(request):
             'filename': pdf.filename,
             'size': f"{pdf.file_size / (1024*1024):.1f} MB",
             'file_size': pdf.file_size,
+            'page_count': pdf.page_count,
             'chunks_count': pdf.chunks_count,
             'upload_date': pdf.uploaded_at.isoformat(),
             'file_url': f"/chatlog/get-pdf/{pdf.id}/?username={username}",
@@ -762,6 +770,76 @@ def list_pdfs(request):
         return JsonResponse({
             'documents': documents,
             'count': len(documents)
+        })
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_user_stats(request):
+    """
+    Get user's knowledge base statistics.
+    Returns document count, page count, storage used, and chunk count.
+    GET /chatlog/user/stats/
+    """
+    try:
+        # Get user from JWT auth or fallback to username param
+        user_kb, error_response = get_user_knowledge_base(request)
+        if error_response:
+            return error_response
+
+        # Get all completed PDFs for this user
+        pdfs = UploadedPDF.objects.filter(
+            user_knowledge_base=user_kb,
+            status='completed'
+        )
+
+        # Calculate statistics
+        total_documents = pdfs.count()
+        total_pages = sum(pdf.page_count for pdf in pdfs)
+        total_storage_bytes = sum(pdf.file_size for pdf in pdfs)
+        total_chunks = sum(pdf.chunks_count for pdf in pdfs)
+
+        # Format storage size
+        if total_storage_bytes >= 1024 * 1024 * 1024:  # GB
+            storage_display = f"{total_storage_bytes / (1024**3):.2f} GB"
+        elif total_storage_bytes >= 1024 * 1024:  # MB
+            storage_display = f"{total_storage_bytes / (1024**2):.1f} MB"
+        elif total_storage_bytes >= 1024:  # KB
+            storage_display = f"{total_storage_bytes / 1024:.1f} KB"
+        else:
+            storage_display = f"{total_storage_bytes} bytes"
+
+        # Get processing stats
+        processing_count = UploadedPDF.objects.filter(
+            user_knowledge_base=user_kb,
+            status='processing'
+        ).count()
+        failed_count = UploadedPDF.objects.filter(
+            user_knowledge_base=user_kb,
+            status='failed'
+        ).count()
+
+        # Get first and last upload dates
+        first_upload = pdfs.order_by('uploaded_at').first()
+        last_upload = pdfs.order_by('-uploaded_at').first()
+
+        return JsonResponse({
+            "stats": {
+                "total_documents": total_documents,
+                "total_pages": total_pages,
+                "total_storage_bytes": total_storage_bytes,
+                "storage_display": storage_display,
+                "total_chunks": total_chunks,
+                "processing_count": processing_count,
+                "failed_count": failed_count,
+                "first_upload": first_upload.uploaded_at.isoformat() if first_upload else None,
+                "last_upload": last_upload.uploaded_at.isoformat() if last_upload else None,
+            },
+            "collection_name": user_kb.collection_name,
+            "username": user_kb.username
         })
 
     except Exception as e:

@@ -4,6 +4,8 @@ from .views import (
     create_user, delete_user, get_all_users, list_pdfs, delete_pdf, get_pdf_file, get_pdf_status,
     create_session, list_sessions, get_session_messages, update_session, delete_session,
     get_document_summary, submit_feedback, get_feedback_stats,
+    # User Stats
+    get_user_stats,
     # Foundation KB Admin
     upload_foundation_pdf, list_foundation_documents, delete_foundation_document,
     get_foundation_document_status, get_foundation_stats,
@@ -40,6 +42,9 @@ urlpatterns = [
     path("delete-pdf/", delete_pdf, name="delete_pdf"),
     path("get-pdf/<int:pdf_id>/", get_pdf_file, name="get_pdf_file"),
     path("pdf-status/<int:pdf_id>/", get_pdf_status, name="get_pdf_status"),
+
+    # User Knowledge Base Stats
+    path("user/stats/", get_user_stats, name="get_user_stats"),
 
     # Chat Agent
     path("ask-agent/", ask_agent, name="ask_agent"),
