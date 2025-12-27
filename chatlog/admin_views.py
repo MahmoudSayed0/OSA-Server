@@ -1550,3 +1550,113 @@ def user_documents_list(request, user_id):
             'error': 'Failed to fetch user documents',
             'detail': str(e)
         }, status=500)
+
+
+# ==============================
+# FEEDBACK MANAGEMENT
+# ==============================
+
+@require_staff
+@require_http_methods(["GET"])
+def admin_feedback_list(request):
+    """
+    Get all user feedback with pagination and filtering.
+
+    GET /chatlog/admin/feedback/
+    Query params:
+      - page: Page number (default 1)
+      - page_size: Items per page (default 50)
+      - feedback_type: Filter by type (thumbs_up, thumbs_down, save_note, copy)
+      - content_type: Filter by content type (summary, chat_response)
+      - username: Filter by username
+    """
+    try:
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 50))
+        feedback_type = request.GET.get('feedback_type')
+        content_type = request.GET.get('content_type')
+        username = request.GET.get('username')
+
+        # Build query
+        feedbacks = UserFeedback.objects.select_related('user_knowledge_base').all()
+
+        if feedback_type:
+            feedbacks = feedbacks.filter(feedback_type=feedback_type)
+        if content_type:
+            feedbacks = feedbacks.filter(content_type=content_type)
+        if username:
+            feedbacks = feedbacks.filter(user_knowledge_base__username__icontains=username)
+
+        # Order by most recent
+        feedbacks = feedbacks.order_by('-created_at')
+
+        # Calculate totals
+        total = feedbacks.count()
+        total_pages = (total + page_size - 1) // page_size
+
+        # Paginate
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_feedbacks = feedbacks[start:end]
+
+        # Serialize
+        feedback_list = []
+        for fb in page_feedbacks:
+            feedback_list.append({
+                'id': fb.id,
+                'username': fb.user_knowledge_base.username,
+                'feedback_type': fb.feedback_type,
+                'content_type': fb.content_type,
+                'content_preview': fb.content_preview[:200] + '...' if fb.content_preview and len(fb.content_preview) > 200 else fb.content_preview,
+                'comment': fb.comment,
+                'created_at': fb.created_at.isoformat(),
+            })
+
+        # Get stats
+        stats = {
+            'total': UserFeedback.objects.count(),
+            'thumbs_up': UserFeedback.objects.filter(feedback_type='thumbs_up').count(),
+            'thumbs_down': UserFeedback.objects.filter(feedback_type='thumbs_down').count(),
+            'save_note': UserFeedback.objects.filter(feedback_type='save_note').count(),
+            'copy': UserFeedback.objects.filter(feedback_type='copy').count(),
+        }
+
+        return JsonResponse({
+            'success': True,
+            'feedbacks': feedback_list,
+            'stats': stats,
+            'page': page,
+            'page_size': page_size,
+            'total': total,
+            'total_pages': total_pages,
+        })
+
+    except Exception as e:
+        return JsonResponse({
+            'error': 'Failed to fetch feedback',
+            'detail': str(e)
+        }, status=500)
+
+
+@require_staff
+@require_http_methods(["DELETE"])
+def admin_feedback_delete(request, feedback_id):
+    """
+    Delete a feedback entry.
+
+    DELETE /chatlog/admin/feedback/<id>/delete/
+    """
+    try:
+        feedback = UserFeedback.objects.get(id=feedback_id)
+        feedback.delete()
+        return JsonResponse({
+            'success': True,
+            'message': 'Feedback deleted successfully'
+        })
+    except UserFeedback.DoesNotExist:
+        return JsonResponse({'error': 'Feedback not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'error': 'Failed to delete feedback',
+            'detail': str(e)
+        }, status=500)

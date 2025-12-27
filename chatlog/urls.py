@@ -28,6 +28,8 @@ from .admin_views import (
     # Subscription Plan Management
     list_subscription_plans, get_subscription_plan, create_subscription_plan,
     update_subscription_plan, delete_subscription_plan,
+    # Feedback Management
+    admin_feedback_list, admin_feedback_delete,
 )
 
 urlpatterns = [
@@ -123,4 +125,8 @@ urlpatterns = [
     path("admin/plans/create/", create_subscription_plan, name="create_subscription_plan"),
     path("admin/plans/<uuid:plan_id>/update/", update_subscription_plan, name="update_subscription_plan"),
     path("admin/plans/<uuid:plan_id>/delete/", delete_subscription_plan, name="delete_subscription_plan"),
+
+    # Admin Feedback Management
+    path("admin/feedback/", admin_feedback_list, name="admin_feedback_list"),
+    path("admin/feedback/<int:feedback_id>/delete/", admin_feedback_delete, name="admin_feedback_delete"),
 ]
