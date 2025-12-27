@@ -920,7 +920,7 @@ def create_subscription_plan(request):
 
 @csrf_exempt
 @require_staff
-@require_http_methods(["PATCH"])
+@require_http_methods(["PUT", "PATCH"])
 def update_subscription_plan(request, plan_id):
     """
     Update a subscription plan.
