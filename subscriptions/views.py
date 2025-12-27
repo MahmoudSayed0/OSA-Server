@@ -72,9 +72,22 @@ def usage_stats(request):
             delta = subscription.current_period_end - timezone.now()
             days_remaining = max(0, delta.days)
 
+        # Count actual completed PDFs from database (more accurate than counter)
+        from chatlog.models import UserKnowledgeBase, UploadedPDF
+        actual_pdfs = 0
+        try:
+            user_kb = UserKnowledgeBase.objects.filter(username=request.user.username).first()
+            if user_kb:
+                actual_pdfs = UploadedPDF.objects.filter(
+                    user_knowledge_base=user_kb,
+                    status='completed'
+                ).count()
+        except Exception:
+            actual_pdfs = subscription.pdfs_uploaded  # Fallback to counter
+
         # Calculate percentages
         credits_percentage = (subscription.credits_used / plan.credit_limit * 100) if plan.credit_limit > 0 else 0
-        pdfs_percentage = (subscription.pdfs_uploaded / plan.pdf_limit * 100) if plan.pdf_limit > 0 else 0
+        pdfs_percentage = (actual_pdfs / plan.pdf_limit * 100) if plan.pdf_limit > 0 else 0
 
         data = {
             'credits_used': subscription.credits_used,
@@ -82,8 +95,8 @@ def usage_stats(request):
             'credits_limit': plan.credit_limit,
             'credits_percentage': round(credits_percentage, 1),
 
-            'pdfs_uploaded': subscription.pdfs_uploaded,
-            'pdfs_remaining': subscription.pdfs_remaining,
+            'pdfs_uploaded': actual_pdfs,  # Use actual count instead of counter
+            'pdfs_remaining': max(0, plan.pdf_limit - actual_pdfs),
             'pdfs_limit': plan.pdf_limit,
             'pdfs_percentage': round(pdfs_percentage, 1),
 
