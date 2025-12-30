@@ -2108,13 +2108,13 @@ def get_foundation_stats(request):
     GET /chatlog/foundation/stats/
     """
     try:
-        # Get all completed Foundation documents
+        # Get all completed Foundation documents (uploaded via admin)
         documents = FoundationDocument.objects.filter(status='completed', is_active=True)
 
-        total_docs = documents.count()
-        total_chunks = sum(doc.chunks_count for doc in documents)
+        admin_docs = documents.count()
+        admin_chunks = sum(doc.chunks_count for doc in documents)
 
-        # Category breakdown
+        # Category breakdown from admin uploads
         categories = {}
         for doc in documents:
             cat_display = doc.get_category_display()
@@ -2123,9 +2123,27 @@ def get_foundation_stats(request):
             categories[cat_display]['count'] += 1
             categories[cat_display]['chunks'] += doc.chunks_count
 
+        # Get ACTUAL chunk count from vector database (includes KB builder uploads)
+        db_chunks = 0
+        try:
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT COUNT(*)
+                    FROM langchain_pg_embedding e
+                    JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+                    WHERE c.name = %s
+                """, [FOUNDATION_COLLECTION])
+                result = cursor.fetchone()
+                db_chunks = result[0] if result else 0
+        except Exception as db_err:
+            print(f"[Foundation Stats] DB query error: {db_err}")
+            db_chunks = admin_chunks  # Fallback to admin count
+
         return JsonResponse({
-            "total_documents": total_docs,
-            "total_chunks": total_chunks,
+            "total_documents": admin_docs,
+            "total_chunks": db_chunks,  # Use actual DB count
+            "admin_uploaded_chunks": admin_chunks,
             "categories": categories,
             "collection_name": FOUNDATION_COLLECTION
         })
