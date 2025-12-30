@@ -106,6 +106,10 @@ DATABASES = {
         'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
         'HOST': os.getenv('POSTGRES_HOST', 'db'),
         'PORT': os.getenv('POSTGRES_PORT', 5432),
+        'CONN_MAX_AGE': 600,  # Keep connections alive for 10 minutes (prevents cold start)
+        'OPTIONS': {
+            'connect_timeout': 10,
+        }
     }
 }
 

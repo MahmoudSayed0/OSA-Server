@@ -23,13 +23,23 @@ def health_check(request):
     return JsonResponse({"status": "healthy"})
 
 def ready_check(request):
-    """Readiness check - ML models are loaded"""
+    """Readiness check - actually test embeddings and DB connection"""
     try:
-        # Try importing the agent module to ensure models are loaded
-        from chatlog.langgraph_agent import EMBEDDINGS
-        # Test that embeddings are actually callable
-        _ = EMBEDDINGS
-        return JsonResponse({"status": "ready", "models_loaded": True})
+        from chatlog.langgraph_agent import EMBEDDINGS, get_foundation_vectorstore
+
+        # Test embeddings can actually generate vectors (not just import)
+        test_vector = EMBEDDINGS.embed_query("readiness test")
+        if not test_vector or len(test_vector) == 0:
+            raise Exception("Embeddings returned empty vector")
+
+        # Test vector store connection works
+        foundation_vs = get_foundation_vectorstore()
+
+        return JsonResponse({
+            "status": "ready",
+            "models_loaded": True,
+            "embedding_dims": len(test_vector)
+        })
     except Exception as e:
         return JsonResponse(
             {"status": "not_ready", "error": str(e)},

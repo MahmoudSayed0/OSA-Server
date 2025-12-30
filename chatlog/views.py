@@ -23,6 +23,33 @@ from .langgraph_agent import construct_agent_graph, vector_store, add_to_foundat
 # Subscription utilities for limit checking
 from subscriptions.utils import can_use_credits, can_upload_pdf, use_credits, increment_pdf_count, decrement_pdf_count, get_usage_summary
 
+import threading
+import logging
+
+logger = logging.getLogger(__name__)
+
+# ----------------------------
+# AGENT GRAPH CACHE (prevents cold start on first request)
+# ----------------------------
+_agent_cache = {}
+_agent_cache_lock = threading.Lock()
+
+
+def get_or_create_agent_graph(collection_name):
+    """Get cached agent graph or create new one. Prevents cold start delays."""
+    if collection_name in _agent_cache:
+        return _agent_cache[collection_name]
+
+    with _agent_cache_lock:
+        # Double-check after acquiring lock
+        if collection_name in _agent_cache:
+            return _agent_cache[collection_name]
+
+        logger.info(f"[Agent] Creating new agent graph for collection: {collection_name}")
+        agent_graph = construct_agent_graph(collection_name)
+        _agent_cache[collection_name] = agent_graph
+        return agent_graph
+
 
 # ----------------------------
 # AUTH HELPER
@@ -615,8 +642,9 @@ def ask_agent(request):
             if chat_history:
                 chat_history = "This is the last conversation history:\n" + chat_history
 
-            # Run AI agent (frontend has 90-second timeout protection)
-            agent_graph = construct_agent_graph(collection_name)
+            # Run AI agent (using cached agent graph to prevent cold start)
+            logger.info(f"[askAgent] Processing request for user {user_kb.username}, collection: {collection_name}")
+            agent_graph = get_or_create_agent_graph(collection_name)
             messages = agent_graph.invoke({"messages": [("user", user_input), ("system", chat_history)]})
             ai_response = messages["messages"][-1].content
 
@@ -684,6 +712,7 @@ def ask_agent(request):
             return JsonResponse(response_data)
 
         except Exception as e:
+            logger.error(f"[askAgent] Error: {type(e).__name__}: {str(e)}", exc_info=True)
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Only POST allowed"}, status=405)
@@ -1344,8 +1373,8 @@ Format your response EXACTLY as JSON:
 
 Documents to analyze: {', '.join(pdf_filenames)}"""
 
-        # Run AI agent to generate summary
-        agent_graph = construct_agent_graph(collection_name)
+        # Run AI agent to generate summary (using cached agent graph)
+        agent_graph = get_or_create_agent_graph(collection_name)
         messages = agent_graph.invoke({"messages": [("user", summary_prompt)]})
         ai_response = messages["messages"][-1].content
 
