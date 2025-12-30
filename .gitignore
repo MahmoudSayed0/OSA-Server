@@ -63,3 +63,5 @@ backups/
 *.key
 secrets/
 SECRETS_TO_ADD.txt
+scripts/kb_builder/processed/
+scripts/kb_builder/downloads/

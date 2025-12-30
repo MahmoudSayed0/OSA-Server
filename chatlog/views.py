@@ -1971,11 +1971,44 @@ def upload_foundation_pdf(request):
 @require_http_methods(["GET"])
 def list_foundation_documents(request):
     """
-    Admin endpoint: List all Foundation Knowledge Base documents.
+    Admin endpoint: List all Foundation Knowledge Base documents with pagination.
     GET /chatlog/admin/foundation/list/
+    Query params: page, page_size, search, category
     """
     try:
+        # Get pagination params
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 20))
+        search = request.GET.get('search', '').strip()
+        category_filter = request.GET.get('category', '').strip()
+
+        # Base queryset
         documents = FoundationDocument.objects.filter(is_active=True)
+
+        # Apply search filter
+        if search:
+            from django.db.models import Q
+            documents = documents.filter(
+                Q(title__icontains=search) |
+                Q(filename__icontains=search) |
+                Q(description__icontains=search)
+            )
+
+        # Apply category filter
+        if category_filter:
+            documents = documents.filter(category=category_filter)
+
+        # Order by most recent first
+        documents = documents.order_by('-created_at')
+
+        # Get total count before pagination
+        total_count = documents.count()
+        total_pages = (total_count + page_size - 1) // page_size
+
+        # Apply pagination
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated_docs = documents[start:end]
 
         docs_data = [{
             'id': doc.id,
@@ -1990,14 +2023,15 @@ def list_foundation_documents(request):
             'status': doc.status,
             'error_message': doc.error_message,
             'is_active': doc.is_active,
-            'uploaded_at': doc.created_at.isoformat(),  # Match frontend expectation
+            'uploaded_at': doc.created_at.isoformat(),
             'updated_at': doc.updated_at.isoformat()
-        } for doc in documents]
+        } for doc in paginated_docs]
 
-        # Get summary stats
-        total_chunks = sum(doc.chunks_count for doc in documents if doc.status == 'completed')
+        # Get summary stats (from all documents, not just paginated)
+        all_docs = FoundationDocument.objects.filter(is_active=True)
+        total_chunks = sum(doc.chunks_count for doc in all_docs if doc.status == 'completed')
         categories_count = {}
-        for doc in documents:
+        for doc in all_docs:
             if doc.status == 'completed':
                 categories_count[doc.category] = categories_count.get(doc.category, 0) + 1
 
@@ -2005,7 +2039,15 @@ def list_foundation_documents(request):
             'documents': docs_data,
             'count': len(docs_data),
             'total_chunks': total_chunks,
-            'categories': categories_count
+            'categories': categories_count,
+            'pagination': {
+                'page': page,
+                'page_size': page_size,
+                'total': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            }
         })
 
     except Exception as e:
