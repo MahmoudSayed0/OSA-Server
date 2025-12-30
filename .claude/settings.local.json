@@ -44,7 +44,10 @@
       "Bash(gh run:*)",
       "WebFetch(domain:github.com)",
       "Bash(ping:*)",
-      "Bash(docker build:*)"
+      "Bash(docker build:*)",
+      "Bash(git -C /Users/mahmoudomar/Work/Oinride/Safety_Agent log --oneline -20)",
+      "Bash(git -C /Users/mahmoudomar/Work/Oinride/Safety_Agent show --stat HEAD)",
+      "Bash(git -C /Users/mahmoudomar/Work/Oinride/Safety_Agent show:*)"
     ],
     "deny": [],
     "ask": []

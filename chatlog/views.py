@@ -18,7 +18,7 @@ import shutil
 from pathlib import Path
 
 from .models import ConversationLog, UserKnowledgeBase, UploadedPDF, ChatSession, ChatMessage, DocumentSummary, UserFeedback, SavedNote, FoundationDocument
-from .langgraph_agent import construct_agent_graph, vector_store, add_to_foundation_kb, get_foundation_vectorstore, FOUNDATION_COLLECTION
+from .langgraph_agent import construct_agent_graph, vector_store, add_to_foundation_kb, get_foundation_vectorstore, FOUNDATION_COLLECTION, get_current_model, AVAILABLE_MODELS
 
 # Subscription utilities for limit checking
 from subscriptions.utils import can_use_credits, can_upload_pdf, use_credits, increment_pdf_count, decrement_pdf_count, get_usage_summary
@@ -677,12 +677,20 @@ def ask_agent(request):
                 content=user_input
             )
 
-            # Save AI response to ChatMessage
+            # Get current model info for metadata
+            current_model_id = get_current_model()
+            model_config = AVAILABLE_MODELS.get(current_model_id, {})
+
+            # Save AI response to ChatMessage with model info
             ai_message = ChatMessage.objects.create(
                 session=session,
                 role='assistant',
                 content=ai_response,
-                metadata={}
+                metadata={
+                    'model_id': current_model_id,
+                    'model_name': model_config.get('name', 'Unknown'),
+                    'provider': model_config.get('provider', 'unknown')
+                }
             )
 
             # Update session timestamp (triggers auto-update of updated_at)
@@ -702,7 +710,12 @@ def ask_agent(request):
                 "answer": ai_response,
                 "id": log.id,
                 "session_id": str(session.session_id),
-                "message_id": str(ai_message.message_id)
+                "message_id": str(ai_message.message_id),
+                "model_info": {
+                    "model_id": current_model_id,
+                    "model_name": model_config.get('name', 'Unknown'),
+                    "provider": model_config.get('provider', 'unknown')
+                }
             }
 
             # Add credits info if authenticated
