@@ -1834,3 +1834,191 @@ def set_model_config(request):
             'error': 'Failed to set model',
             'detail': str(e)
         }, status=500)
+
+
+# ==============================
+# VECTOR CHUNKS MANAGEMENT
+# ==============================
+
+@csrf_exempt
+@require_staff
+@require_http_methods(["GET"])
+def get_all_chunks(request):
+    """
+    Get all vector chunks from the database with pagination.
+
+    GET /chatlog/admin/chunks/
+    Query params:
+    - page: Page number (default 1)
+    - page_size: Items per page (default 50, max 100)
+    - source: Filter by source ('foundation', 'user', or 'all')
+    - search: Search in chunk content
+    - collection: Filter by specific collection name
+    """
+    try:
+        from django.db import connection
+
+        # Parse query params
+        page = int(request.GET.get('page', 1))
+        page_size = min(int(request.GET.get('page_size', 50)), 100)
+        source = request.GET.get('source', 'all')  # 'foundation', 'user', 'all'
+        search = request.GET.get('search', '').strip()
+        collection_filter = request.GET.get('collection', '').strip()
+
+        offset = (page - 1) * page_size
+
+        chunks = []
+        total_count = 0
+        collections = []
+
+        with connection.cursor() as cursor:
+            # Get all collections first
+            cursor.execute("""
+                SELECT c.uuid, c.name, COUNT(e.uuid) as chunk_count
+                FROM langchain_pg_collection c
+                LEFT JOIN langchain_pg_embedding e ON e.collection_id = c.uuid
+                GROUP BY c.uuid, c.name
+                ORDER BY c.name
+            """)
+            collections = [
+                {
+                    'uuid': str(row[0]),
+                    'name': row[1],
+                    'chunk_count': row[2],
+                    'is_foundation': row[1] == 'foundation_mining_kb'
+                }
+                for row in cursor.fetchall()
+            ]
+
+            # Build WHERE clause based on filters
+            where_clauses = []
+            params = []
+
+            if source == 'foundation':
+                where_clauses.append("c.name = 'foundation_mining_kb'")
+            elif source == 'user':
+                where_clauses.append("c.name != 'foundation_mining_kb'")
+
+            if collection_filter:
+                where_clauses.append("c.name = %s")
+                params.append(collection_filter)
+
+            if search:
+                where_clauses.append("e.document ILIKE %s")
+                params.append(f'%{search}%')
+
+            where_sql = ""
+            if where_clauses:
+                where_sql = "WHERE " + " AND ".join(where_clauses)
+
+            # Get total count
+            count_query = f"""
+                SELECT COUNT(*)
+                FROM langchain_pg_embedding e
+                JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+                {where_sql}
+            """
+            cursor.execute(count_query, params)
+            total_count = cursor.fetchone()[0]
+
+            # Get chunks with pagination
+            chunks_query = f"""
+                SELECT
+                    e.uuid,
+                    c.name as collection_name,
+                    LEFT(e.document, 500) as content_preview,
+                    LENGTH(e.document) as content_length,
+                    e.cmetadata
+                FROM langchain_pg_embedding e
+                JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+                {where_sql}
+                ORDER BY c.name, e.uuid
+                LIMIT %s OFFSET %s
+            """
+            cursor.execute(chunks_query, params + [page_size, offset])
+
+            for row in cursor.fetchall():
+                metadata = row[4] if row[4] else {}
+                chunks.append({
+                    'id': str(row[0]),
+                    'collection': row[1],
+                    'is_foundation': row[1] == 'foundation_mining_kb',
+                    'content_preview': row[2] + ('...' if row[3] > 500 else ''),
+                    'content_length': row[3],
+                    'source_file': metadata.get('source', metadata.get('filename', 'Unknown')),
+                    'page': metadata.get('page', None),
+                    'metadata': metadata
+                })
+
+        # Calculate pagination info
+        total_pages = (total_count + page_size - 1) // page_size
+
+        return JsonResponse({
+            'chunks': chunks,
+            'pagination': {
+                'page': page,
+                'page_size': page_size,
+                'total_count': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            },
+            'collections': collections,
+            'filters': {
+                'source': source,
+                'search': search,
+                'collection': collection_filter
+            }
+        })
+
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }, status=500)
+
+
+@csrf_exempt
+@require_staff
+@require_http_methods(["GET"])
+def get_chunk_detail(request, chunk_id):
+    """
+    Get full details of a specific chunk.
+
+    GET /chatlog/admin/chunks/<chunk_id>/
+    """
+    try:
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                    e.uuid,
+                    c.name as collection_name,
+                    e.document,
+                    e.cmetadata
+                FROM langchain_pg_embedding e
+                JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+                WHERE e.uuid = %s
+            """, [chunk_id])
+
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Chunk not found'}, status=404)
+
+            metadata = row[3] if row[3] else {}
+
+            return JsonResponse({
+                'id': str(row[0]),
+                'collection': row[1],
+                'is_foundation': row[1] == 'foundation_mining_kb',
+                'content': row[2],
+                'content_length': len(row[2]),
+                'source_file': metadata.get('source', metadata.get('filename', 'Unknown')),
+                'page': metadata.get('page', None),
+                'metadata': metadata
+            })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

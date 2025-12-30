@@ -32,6 +32,8 @@ from .admin_views import (
     admin_feedback_list, admin_feedback_delete,
     # AI Model Configuration
     get_model_config, set_model_config,
+    # Vector Chunks Management
+    get_all_chunks, get_chunk_detail,
 )
 
 urlpatterns = [
@@ -135,4 +137,8 @@ urlpatterns = [
     # Admin AI Model Configuration
     path("admin/models/", get_model_config, name="get_model_config"),
     path("admin/models/set/", set_model_config, name="set_model_config"),
+
+    # Admin Vector Chunks Management
+    path("admin/chunks/", get_all_chunks, name="get_all_chunks"),
+    path("admin/chunks/<str:chunk_id>/", get_chunk_detail, name="get_chunk_detail"),
 ]
