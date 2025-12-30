@@ -6,6 +6,7 @@ from langchain_community.tools import tool
 from langchain_community.vectorstores import PGVector
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 
 # ----------------------------
@@ -25,21 +26,184 @@ EMBEDDINGS = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-
 # Foundation Knowledge Base collection name (shared by all users)
 FOUNDATION_COLLECTION = 'foundation_mining_kb'
 
-# OpenRouter API Key (for Mistral Devstral 2 2512)
+# ----------------------------
+# API KEYS FOR MULTIPLE LLM PROVIDERS
+# ----------------------------
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
-if not OPENROUTER_API_KEY:
-    raise ValueError("OPENROUTER_API_KEY environment variable is not set. Please set it in your .env file or docker-compose environment.")
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+
+# Default model configuration (can be changed via admin panel)
+DEFAULT_MODEL_PROVIDER = os.getenv('DEFAULT_MODEL_PROVIDER', 'mistral')  # mistral, openai, gemini
 
 # ----------------------------
-# LLM (Mistral Devstral 2 2512 via OpenRouter - Free Tier)
+# AVAILABLE MODELS CONFIGURATION
 # ----------------------------
-llm = ChatOpenAI(
-    model="mistralai/devstral-2512:free",
-    openai_api_key=OPENROUTER_API_KEY,
-    openai_api_base="https://openrouter.ai/api/v1",
-    temperature=0,
-    max_tokens=2000
-)
+AVAILABLE_MODELS = {
+    'mistral': {
+        'name': 'Mistral (Free)',
+        'provider': 'openrouter',
+        'model_id': 'mistralai/devstral-2512:free',
+        'description': 'Fast, free tier model via OpenRouter',
+        'requires_key': 'OPENROUTER_API_KEY',
+    },
+    'mistral-large': {
+        'name': 'Mistral Large',
+        'provider': 'openrouter',
+        'model_id': 'mistralai/mistral-large-latest',
+        'description': 'Powerful Mistral model for complex tasks',
+        'requires_key': 'OPENROUTER_API_KEY',
+    },
+    'gpt-4o': {
+        'name': 'GPT-4o (OpenAI)',
+        'provider': 'openai',
+        'model_id': 'gpt-4o',
+        'description': 'Most capable OpenAI model',
+        'requires_key': 'OPENAI_API_KEY',
+    },
+    'gpt-4o-mini': {
+        'name': 'GPT-4o Mini (OpenAI)',
+        'provider': 'openai',
+        'model_id': 'gpt-4o-mini',
+        'description': 'Fast and affordable OpenAI model',
+        'requires_key': 'OPENAI_API_KEY',
+    },
+    'gemini-pro': {
+        'name': 'Gemini Pro (Google)',
+        'provider': 'google',
+        'model_id': 'gemini-1.5-pro',
+        'description': 'Google\'s most capable model',
+        'requires_key': 'GOOGLE_API_KEY',
+    },
+    'gemini-flash': {
+        'name': 'Gemini Flash (Google)',
+        'provider': 'google',
+        'model_id': 'gemini-1.5-flash',
+        'description': 'Fast and efficient Google model',
+        'requires_key': 'GOOGLE_API_KEY',
+    },
+}
+
+# Current active model (can be changed at runtime)
+_current_model = DEFAULT_MODEL_PROVIDER
+
+
+def get_available_models():
+    """Get list of available models with their availability status."""
+    models = []
+    for key, config in AVAILABLE_MODELS.items():
+        required_key = config['requires_key']
+        is_available = bool(os.getenv(required_key))
+        models.append({
+            'id': key,
+            'name': config['name'],
+            'provider': config['provider'],
+            'description': config['description'],
+            'available': is_available,
+            'missing_key': None if is_available else required_key,
+        })
+    return models
+
+
+def get_current_model():
+    """Get the currently configured model."""
+    global _current_model
+    return _current_model
+
+
+def set_current_model(model_id):
+    """Set the current model to use."""
+    global _current_model
+    if model_id not in AVAILABLE_MODELS:
+        raise ValueError(f"Unknown model: {model_id}. Available: {list(AVAILABLE_MODELS.keys())}")
+
+    config = AVAILABLE_MODELS[model_id]
+    required_key = config['requires_key']
+    if not os.getenv(required_key):
+        raise ValueError(f"API key {required_key} not configured for model {model_id}")
+
+    _current_model = model_id
+    print(f"[LLM] Switched to model: {model_id} ({config['name']})")
+    return True
+
+
+def get_llm(model_id=None):
+    """
+    Get LLM instance for the specified model (or current model if not specified).
+
+    Supports:
+    - Mistral via OpenRouter (free and paid)
+    - OpenAI GPT-4o and GPT-4o-mini
+    - Google Gemini Pro and Flash
+    """
+    global _current_model
+
+    if model_id is None:
+        model_id = _current_model
+
+    if model_id not in AVAILABLE_MODELS:
+        print(f"[LLM] Unknown model {model_id}, falling back to mistral")
+        model_id = 'mistral'
+
+    config = AVAILABLE_MODELS[model_id]
+    provider = config['provider']
+    model_name = config['model_id']
+
+    print(f"[LLM] Creating {config['name']} ({model_name})")
+
+    if provider == 'openrouter':
+        if not OPENROUTER_API_KEY:
+            raise ValueError("OPENROUTER_API_KEY not set")
+        return ChatOpenAI(
+            model=model_name,
+            openai_api_key=OPENROUTER_API_KEY,
+            openai_api_base="https://openrouter.ai/api/v1",
+            temperature=0,
+            max_tokens=2000
+        )
+
+    elif provider == 'openai':
+        if not OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY not set")
+        return ChatOpenAI(
+            model=model_name,
+            openai_api_key=OPENAI_API_KEY,
+            temperature=0,
+            max_tokens=2000
+        )
+
+    elif provider == 'google':
+        if not GOOGLE_API_KEY:
+            raise ValueError("GOOGLE_API_KEY not set")
+        return ChatGoogleGenerativeAI(
+            model=model_name,
+            google_api_key=GOOGLE_API_KEY,
+            temperature=0,
+            max_output_tokens=2000
+        )
+
+    else:
+        raise ValueError(f"Unknown provider: {provider}")
+
+
+# ----------------------------
+# DEFAULT LLM (uses current model configuration)
+# ----------------------------
+try:
+    llm = get_llm()
+except Exception as e:
+    print(f"[LLM] Warning: Could not initialize default LLM: {e}")
+    # Fallback to basic Mistral if available
+    if OPENROUTER_API_KEY:
+        llm = ChatOpenAI(
+            model="mistralai/devstral-2512:free",
+            openai_api_key=OPENROUTER_API_KEY,
+            openai_api_base="https://openrouter.ai/api/v1",
+            temperature=0,
+            max_tokens=2000
+        )
+    else:
+        raise ValueError("No LLM API keys configured. Please set at least OPENROUTER_API_KEY.")
 
 
 # ----------------------------

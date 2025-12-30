@@ -135,6 +135,7 @@ def dashboard_stats(request):
     GET /chatlog/admin/dashboard/stats/
 
     Returns total counts of users, documents, sessions, and credits used.
+    Also includes friendly marketing statistics for Foundation KB power.
     """
     try:
         # Get total counts
@@ -166,7 +167,58 @@ def dashboard_stats(request):
         )['total'] or 0
         storage_used_mb = total_storage_bytes / (1024 * 1024)  # Convert bytes to MB
 
+        # ============================================
+        # FRIENDLY KB STATISTICS (Marketing Data)
+        # ============================================
+        from django.db import connection
+
+        # Get total chunks from vector database
+        total_chunks = 0
+        foundation_chunks = 0
+        user_chunks = 0
+        try:
+            with connection.cursor() as cursor:
+                # Total chunks in system
+                cursor.execute("SELECT count(*) FROM langchain_pg_embedding")
+                total_chunks = cursor.fetchone()[0]
+
+                # Foundation KB chunks (from foundation_mining_kb collection)
+                cursor.execute("""
+                    SELECT count(*) FROM langchain_pg_embedding e
+                    JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+                    WHERE c.name = 'foundation_mining_kb'
+                """)
+                foundation_chunks = cursor.fetchone()[0]
+
+                # User document chunks
+                user_chunks = total_chunks - foundation_chunks
+        except Exception as e:
+            print(f"[Dashboard] Could not fetch chunk stats: {e}")
+
+        # Calculate total pages memorized (from uploaded PDFs)
+        total_pages = UploadedPDF.objects.aggregate(
+            total=Sum('page_count')
+        )['total'] or 0
+
+        # Foundation pages
+        foundation_pages = FoundationDocument.objects.aggregate(
+            total=Sum('page_count')
+        )['total'] or 0
+
+        # Estimate words analyzed (roughly 250 words per chunk on average)
+        total_words_analyzed = total_chunks * 250
+        foundation_words = foundation_chunks * 250
+
+        # Format large numbers for display
+        def format_number(num):
+            if num >= 1000000:
+                return f"{num/1000000:.1f}M"
+            elif num >= 1000:
+                return f"{num/1000:.1f}K"
+            return str(num)
+
         return JsonResponse({
+            # Basic stats
             'total_users': total_users,
             'total_documents': total_documents,
             'total_sessions': total_sessions,
@@ -174,6 +226,39 @@ def dashboard_stats(request):
             'total_foundation_docs': total_foundation_docs,
             'active_users_30d': active_users_30d,
             'storage_used_mb': round(storage_used_mb, 2),
+
+            # ============================================
+            # FRIENDLY KB STATISTICS
+            # ============================================
+            'kb_stats': {
+                # Total system stats
+                'total_chunks': total_chunks,
+                'total_chunks_display': format_number(total_chunks),
+                'total_pages_memorized': total_pages + foundation_pages,
+                'total_pages_display': format_number(total_pages + foundation_pages),
+                'total_words_analyzed': total_words_analyzed,
+                'total_words_display': format_number(total_words_analyzed),
+
+                # Foundation KB power stats (marketing friendly)
+                'foundation': {
+                    'documents': total_foundation_docs,
+                    'chunks': foundation_chunks,
+                    'chunks_display': format_number(foundation_chunks),
+                    'pages': foundation_pages,
+                    'pages_display': format_number(foundation_pages),
+                    'words': foundation_words,
+                    'words_display': format_number(foundation_words),
+                },
+
+                # User documents stats
+                'user_docs': {
+                    'documents': total_documents,
+                    'chunks': user_chunks,
+                    'chunks_display': format_number(user_chunks),
+                    'pages': total_pages,
+                    'pages_display': format_number(total_pages),
+                }
+            }
         })
 
     except Exception as e:
@@ -1658,5 +1743,94 @@ def admin_feedback_delete(request, feedback_id):
     except Exception as e:
         return JsonResponse({
             'error': 'Failed to delete feedback',
+            'detail': str(e)
+        }, status=500)
+
+
+# ==============================
+# AI MODEL CONFIGURATION
+# ==============================
+
+@require_staff
+@require_http_methods(["GET"])
+def get_model_config(request):
+    """
+    Get available AI models and current configuration.
+
+    GET /chatlog/admin/models/
+    
+    Returns list of available models and which one is currently active.
+    """
+    try:
+        from .langgraph_agent import get_available_models, get_current_model, AVAILABLE_MODELS
+        
+        current_model = get_current_model()
+        available_models = get_available_models()
+        
+        # Add current status to the models list
+        for model in available_models:
+            model['is_current'] = model['id'] == current_model
+        
+        return JsonResponse({
+            'success': True,
+            'current_model': current_model,
+            'current_model_name': AVAILABLE_MODELS.get(current_model, {}).get('name', 'Unknown'),
+            'models': available_models,
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'error': 'Failed to fetch model configuration',
+            'detail': str(e)
+        }, status=500)
+
+
+@require_staff
+@csrf_exempt
+@require_http_methods(["POST"])
+def set_model_config(request):
+    """
+    Set the active AI model.
+
+    POST /chatlog/admin/models/set/
+    Body: {"model_id": "gpt-4o"}
+    
+    Changes the AI model used for all chat requests.
+    """
+    try:
+        from .langgraph_agent import set_current_model, get_available_models, AVAILABLE_MODELS
+        from .views import _agent_cache
+        
+        data = json.loads(request.body)
+        model_id = data.get('model_id')
+        
+        if not model_id:
+            return JsonResponse({'error': 'model_id is required'}, status=400)
+        
+        # Validate model exists
+        if model_id not in AVAILABLE_MODELS:
+            return JsonResponse({
+                'error': f'Unknown model: {model_id}',
+                'available': list(AVAILABLE_MODELS.keys())
+            }, status=400)
+        
+        # Set the new model
+        set_current_model(model_id)
+        
+        # Clear the agent cache so new requests use the new model
+        _agent_cache.clear()
+        print(f"[Admin] Cleared agent cache after model change to {model_id}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Model changed to {AVAILABLE_MODELS[model_id]["name"]}',
+            'current_model': model_id,
+        })
+    
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'error': 'Failed to set model',
             'detail': str(e)
         }, status=500)

@@ -30,6 +30,8 @@ from .admin_views import (
     update_subscription_plan, delete_subscription_plan,
     # Feedback Management
     admin_feedback_list, admin_feedback_delete,
+    # AI Model Configuration
+    get_model_config, set_model_config,
 )
 
 urlpatterns = [
@@ -129,4 +131,8 @@ urlpatterns = [
     # Admin Feedback Management
     path("admin/feedback/", admin_feedback_list, name="admin_feedback_list"),
     path("admin/feedback/<int:feedback_id>/delete/", admin_feedback_delete, name="admin_feedback_delete"),
+
+    # Admin AI Model Configuration
+    path("admin/models/", get_model_config, name="get_model_config"),
+    path("admin/models/set/", set_model_config, name="set_model_config"),
 ]
