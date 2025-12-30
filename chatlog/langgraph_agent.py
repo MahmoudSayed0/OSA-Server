@@ -18,10 +18,13 @@ CONNECTION_STRING = (
     f"postgresql+psycopg2://{os.getenv('POSTGRES_USER')}:{_postgres_password}@{os.getenv('POSTGRES_HOST', 'db')}:{os.getenv('POSTGRES_PORT', 5432)}/{os.getenv('POSTGRES_DB')}"
 )
 
-print("CONNECTION_STRING")
-print("CONNECTION_STRING")
-print(CONNECTION_STRING)
+print("[STARTUP] Initializing embeddings model...")
 EMBEDDINGS = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+# Force embeddings to fully load by running a warmup query
+print("[STARTUP] Warming up embeddings with test query...")
+_warmup_embedding = EMBEDDINGS.embed_query("warmup test query for cold start prevention")
+print(f"[STARTUP] Embeddings ready! Vector dimensions: {len(_warmup_embedding)}")
 
 # Foundation Knowledge Base collection name (shared by all users)
 FOUNDATION_COLLECTION = 'foundation_mining_kb'
