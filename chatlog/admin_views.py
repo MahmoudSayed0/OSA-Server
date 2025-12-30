@@ -200,10 +200,9 @@ def dashboard_stats(request):
             total=Sum('page_count')
         )['total'] or 0
 
-        # Foundation pages
-        foundation_pages = FoundationDocument.objects.aggregate(
-            total=Sum('page_count')
-        )['total'] or 0
+        # Foundation pages - estimate from chunks (foundation docs don't track page_count)
+        # Roughly 2-3 chunks per page on average
+        foundation_pages = foundation_chunks // 2 if foundation_chunks > 0 else 0
 
         # Estimate words analyzed (roughly 250 words per chunk on average)
         total_words_analyzed = total_chunks * 250
@@ -1938,7 +1937,19 @@ def get_all_chunks(request):
             cursor.execute(chunks_query, params + [page_size, offset])
 
             for row in cursor.fetchall():
-                metadata = row[4] if row[4] else {}
+                # Parse metadata - it may be a JSON string or already a dict
+                raw_metadata = row[4]
+                if isinstance(raw_metadata, str):
+                    import json
+                    try:
+                        metadata = json.loads(raw_metadata)
+                    except (json.JSONDecodeError, TypeError):
+                        metadata = {}
+                elif isinstance(raw_metadata, dict):
+                    metadata = raw_metadata
+                else:
+                    metadata = {}
+
                 chunks.append({
                     'id': str(row[0]),
                     'collection': row[1],
@@ -2007,7 +2018,18 @@ def get_chunk_detail(request, chunk_id):
             if not row:
                 return JsonResponse({'error': 'Chunk not found'}, status=404)
 
-            metadata = row[3] if row[3] else {}
+            # Parse metadata - it may be a JSON string or already a dict
+            raw_metadata = row[3]
+            if isinstance(raw_metadata, str):
+                import json
+                try:
+                    metadata = json.loads(raw_metadata)
+                except (json.JSONDecodeError, TypeError):
+                    metadata = {}
+            elif isinstance(raw_metadata, dict):
+                metadata = raw_metadata
+            else:
+                metadata = {}
 
             return JsonResponse({
                 'id': str(row[0]),
