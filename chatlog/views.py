@@ -2344,29 +2344,44 @@ def get_foundation_stats(request):
             categories[cat_display]['count'] += 1
             categories[cat_display]['chunks'] += doc.chunks_count
 
-        # Get ACTUAL chunk count from vector database (includes KB builder uploads)
+        # Get ACTUAL chunk count and storage from vector database (includes KB builder uploads)
         db_chunks = 0
+        db_size_bytes = 0
+        db_size_display = "0 MB"
         try:
             from django.db import connection
             with connection.cursor() as cursor:
+                # Get chunks from ALL foundation collections
                 cursor.execute("""
                     SELECT COUNT(*)
                     FROM langchain_pg_embedding e
                     JOIN langchain_pg_collection c ON e.collection_id = c.uuid
-                    WHERE c.name = %s
-                """, [FOUNDATION_COLLECTION])
+                    WHERE c.name LIKE %s
+                """, ['foundation%'])
                 result = cursor.fetchone()
                 db_chunks = result[0] if result else 0
+
+                # Get actual database size
+                cursor.execute("SELECT pg_database_size(current_database())")
+                db_size_bytes = cursor.fetchone()[0]
+
+                # Format size for display
+                if db_size_bytes >= 1024 * 1024 * 1024:
+                    db_size_display = f"{db_size_bytes / (1024 * 1024 * 1024):.2f} GB"
+                else:
+                    db_size_display = f"{db_size_bytes / (1024 * 1024):.2f} MB"
         except Exception as db_err:
             print(f"[Foundation Stats] DB query error: {db_err}")
             db_chunks = admin_chunks  # Fallback to admin count
 
         return JsonResponse({
             "total_documents": admin_docs,
-            "total_chunks": db_chunks,  # Use actual DB count
+            "total_chunks": db_chunks,  # Use actual DB count from ALL foundation collections
             "admin_uploaded_chunks": admin_chunks,
             "categories": categories,
-            "collection_name": FOUNDATION_COLLECTION
+            "collection_name": FOUNDATION_COLLECTION,
+            "total_storage_bytes": db_size_bytes,
+            "storage_display": db_size_display
         })
 
     except Exception as e:
