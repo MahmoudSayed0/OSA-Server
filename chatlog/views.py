@@ -2172,7 +2172,7 @@ def get_foundation_document_chunks(request, doc_id):
                     SELECT e.uuid, e.document, e.cmetadata
                     FROM langchain_pg_embedding e
                     JOIN langchain_pg_collection c ON e.collection_id = c.uuid
-                    WHERE c.name LIKE 'foundation%%'
+                    WHERE c.name LIKE %s
                     AND (
                         e.cmetadata->>'source' = %s
                         OR e.cmetadata->>'source' LIKE %s
@@ -2180,7 +2180,7 @@ def get_foundation_document_chunks(request, doc_id):
                     )
                     ORDER BY (e.cmetadata->>'page')::int NULLS LAST
                     LIMIT %s
-                """, [file_path, f'%{doc.filename}%', f'%{doc.filename}%', limit])
+                """, ['foundation%', file_path, f'%{doc.filename}%', f'%{doc.filename}%', limit])
 
                 for row in cursor.fetchall():
                     chunk_id, content, metadata = row
