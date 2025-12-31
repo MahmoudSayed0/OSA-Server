@@ -2167,11 +2167,12 @@ def get_foundation_document_chunks(request, doc_id):
                 file_path = doc.file_path or doc.filename
 
                 # Get chunks that match this document's file_path or filename
+                # Search across ALL foundation collections (foundation_kb, foundation_mining_kb, etc.)
                 cursor.execute("""
                     SELECT e.uuid, e.document, e.cmetadata
                     FROM langchain_pg_embedding e
                     JOIN langchain_pg_collection c ON e.collection_id = c.uuid
-                    WHERE c.name = %s
+                    WHERE c.name LIKE 'foundation%%'
                     AND (
                         e.cmetadata->>'source' = %s
                         OR e.cmetadata->>'source' LIKE %s
@@ -2179,7 +2180,7 @@ def get_foundation_document_chunks(request, doc_id):
                     )
                     ORDER BY (e.cmetadata->>'page')::int NULLS LAST
                     LIMIT %s
-                """, [FOUNDATION_COLLECTION, file_path, f'%{doc.filename}%', f'%{doc.filename}%', limit])
+                """, [file_path, f'%{doc.filename}%', f'%{doc.filename}%', limit])
 
                 for row in cursor.fetchall():
                     chunk_id, content, metadata = row
