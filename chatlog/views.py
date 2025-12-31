@@ -2186,6 +2186,12 @@ def get_foundation_document_chunks(request, doc_id):
                     chunk_id, content, metadata = row
                     page = None
                     if metadata:
+                        # Parse metadata if it's a JSON string
+                        if isinstance(metadata, str):
+                            try:
+                                metadata = json.loads(metadata)
+                            except:
+                                metadata = {}
                         page = metadata.get('page') or metadata.get('page_number')
                     chunks.append({
                         "id": str(chunk_id),
