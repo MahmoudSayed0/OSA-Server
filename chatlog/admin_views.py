@@ -165,7 +165,7 @@ def dashboard_stats(request):
         total_storage_bytes = UploadedPDF.objects.aggregate(
             total=Sum('file_size')
         )['total'] or 0
-        storage_used_mb = total_storage_bytes / (1024 * 1024)  # Convert bytes to MB
+        user_storage_mb = total_storage_bytes / (1024 * 1024)  # Convert bytes to MB
 
         # ============================================
         # FRIENDLY KB STATISTICS (Marketing Data)
@@ -176,24 +176,33 @@ def dashboard_stats(request):
         total_chunks = 0
         foundation_chunks = 0
         user_chunks = 0
+        db_size_mb = 0
         try:
             with connection.cursor() as cursor:
                 # Total chunks in system
                 cursor.execute("SELECT count(*) FROM langchain_pg_embedding")
                 total_chunks = cursor.fetchone()[0]
 
-                # Foundation KB chunks (from foundation_mining_kb collection)
+                # Foundation KB chunks (from ALL foundation collections)
                 cursor.execute("""
                     SELECT count(*) FROM langchain_pg_embedding e
                     JOIN langchain_pg_collection c ON e.collection_id = c.uuid
-                    WHERE c.name = 'foundation_mining_kb'
+                    WHERE c.name LIKE 'foundation%'
                 """)
                 foundation_chunks = cursor.fetchone()[0]
 
                 # User document chunks
                 user_chunks = total_chunks - foundation_chunks
+
+                # Get actual database size
+                cursor.execute("SELECT pg_database_size(current_database())")
+                db_size_bytes = cursor.fetchone()[0]
+                db_size_mb = db_size_bytes / (1024 * 1024)
         except Exception as e:
             print(f"[Dashboard] Could not fetch chunk stats: {e}")
+
+        # Use actual database size for storage display
+        storage_used_mb = db_size_mb if db_size_mb > 0 else user_storage_mb
 
         # Calculate total pages memorized (from uploaded PDFs)
         total_pages = UploadedPDF.objects.aggregate(
