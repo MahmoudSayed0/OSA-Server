@@ -2163,18 +2163,23 @@ def get_foundation_document_chunks(request, doc_id):
         try:
             from django.db import connection
             with connection.cursor() as cursor:
-                # Get chunks that match this document's filename
+                # Use file_path for more accurate matching
+                file_path = doc.file_path or doc.filename
+
+                # Get chunks that match this document's file_path or filename
                 cursor.execute("""
                     SELECT e.uuid, e.document, e.cmetadata
                     FROM langchain_pg_embedding e
                     JOIN langchain_pg_collection c ON e.collection_id = c.uuid
                     WHERE c.name = %s
                     AND (
-                        e.cmetadata->>'source' LIKE %s
+                        e.cmetadata->>'source' = %s
+                        OR e.cmetadata->>'source' LIKE %s
                         OR e.cmetadata->>'source_file' LIKE %s
                     )
+                    ORDER BY (e.cmetadata->>'page')::int NULLS LAST
                     LIMIT %s
-                """, [FOUNDATION_COLLECTION, f'%{doc.filename}%', f'%{doc.filename}%', limit])
+                """, [FOUNDATION_COLLECTION, file_path, f'%{doc.filename}%', f'%{doc.filename}%', limit])
 
                 for row in cursor.fetchall():
                     chunk_id, content, metadata = row
@@ -2184,21 +2189,128 @@ def get_foundation_document_chunks(request, doc_id):
                     chunks.append({
                         "id": str(chunk_id),
                         "content_preview": content[:500] if content else "",
+                        "full_content": content if content else "",
                         "source_file": doc.filename,
                         "page": page
                     })
         except Exception as db_err:
             print(f"[Foundation Chunks] DB query error: {db_err}")
+            import traceback
+            traceback.print_exc()
+
+        # Get file type from filename
+        file_ext = doc.filename.split('.')[-1].lower() if '.' in doc.filename else 'unknown'
 
         return JsonResponse({
             "document_id": doc.id,
             "filename": doc.filename,
+            "file_path": doc.file_path,
+            "file_type": file_ext,
+            "file_size": doc.file_size,
+            "category": doc.category,
+            "category_display": doc.get_category_display(),
             "total_chunks": doc.chunks_count,
             "chunks": chunks,
-            "showing": len(chunks)
+            "showing": len(chunks),
+            "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+            "status": doc.status
         })
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_staff
+@require_http_methods(["GET"])
+def get_foundation_document_file(request, doc_id):
+    """
+    Admin endpoint: Get actual file content for a Foundation document.
+    For TXT files: returns the text content
+    For PDF files: returns the file for download/viewing
+
+    GET /chatlog/admin/foundation/<doc_id>/file/
+    """
+    try:
+        try:
+            doc = FoundationDocument.objects.get(id=doc_id)
+        except FoundationDocument.DoesNotExist:
+            return JsonResponse({"error": "Document not found"}, status=404)
+
+        file_path = doc.file_path
+        if not file_path:
+            return JsonResponse({"error": "File path not available"}, status=404)
+
+        # Check if file exists
+        if not os.path.exists(file_path):
+            # File might be on VPS in kb_builder directory
+            # Try alternative paths
+            alt_paths = [
+                f"/app/kb_builder/downloads/{doc.filename}",
+                f"/opt/kb_builder/downloads/{doc.filename}",
+            ]
+            file_found = False
+            for alt_path in alt_paths:
+                if os.path.exists(alt_path):
+                    file_path = alt_path
+                    file_found = True
+                    break
+
+            if not file_found:
+                # Return file info even if file not accessible
+                file_ext = doc.filename.split('.')[-1].lower() if '.' in doc.filename else 'unknown'
+                return JsonResponse({
+                    "error": "File not accessible on server",
+                    "file_info": {
+                        "filename": doc.filename,
+                        "file_path": doc.file_path,
+                        "file_type": file_ext,
+                        "file_size": doc.file_size,
+                        "chunks_count": doc.chunks_count
+                    }
+                }, status=404)
+
+        file_ext = doc.filename.split('.')[-1].lower() if '.' in doc.filename else 'unknown'
+
+        # For TXT files, return content as JSON
+        if file_ext == 'txt':
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                return JsonResponse({
+                    "document_id": doc.id,
+                    "filename": doc.filename,
+                    "file_type": "txt",
+                    "content": content,
+                    "file_size": len(content),
+                    "chunks_count": doc.chunks_count
+                })
+            except Exception as read_err:
+                return JsonResponse({"error": f"Could not read file: {str(read_err)}"}, status=500)
+
+        # For PDF files, return the file
+        elif file_ext == 'pdf':
+            try:
+                return FileResponse(
+                    open(file_path, 'rb'),
+                    content_type='application/pdf',
+                    as_attachment=False,
+                    filename=doc.filename
+                )
+            except Exception as read_err:
+                return JsonResponse({"error": f"Could not serve PDF: {str(read_err)}"}, status=500)
+
+        else:
+            return JsonResponse({
+                "error": f"Unsupported file type: {file_ext}",
+                "supported_types": ["txt", "pdf"]
+            }, status=400)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JsonResponse({"error": str(e)}, status=500)
 
 

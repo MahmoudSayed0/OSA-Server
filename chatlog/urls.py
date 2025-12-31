@@ -8,7 +8,7 @@ from .views import (
     get_user_stats,
     # Foundation KB Admin
     upload_foundation_pdf, list_foundation_documents, delete_foundation_document,
-    get_foundation_document_status, get_foundation_document_chunks, get_foundation_stats,
+    get_foundation_document_status, get_foundation_document_chunks, get_foundation_document_file, get_foundation_stats,
     # Database Stats & RAG Evaluation
     get_db_stats, run_rag_evaluation
 )
@@ -76,6 +76,7 @@ urlpatterns = [
     path("admin/foundation/list/", list_foundation_documents, name="list_foundation_documents"),
     path("admin/foundation/<int:doc_id>/delete/", delete_foundation_document, name="delete_foundation_document"),
     path("admin/foundation/<int:doc_id>/chunks/", get_foundation_document_chunks, name="get_foundation_document_chunks"),
+    path("admin/foundation/<int:doc_id>/file/", get_foundation_document_file, name="get_foundation_document_file"),
     path("admin/foundation/status/<int:doc_id>/", get_foundation_document_status, name="get_foundation_document_status"),
 
     # Foundation Knowledge Base (Public)
