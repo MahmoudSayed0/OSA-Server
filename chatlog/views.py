@@ -2143,6 +2143,66 @@ def get_foundation_document_status(request, doc_id):
 
 
 @csrf_exempt
+@require_staff
+@require_http_methods(["GET"])
+def get_foundation_document_chunks(request, doc_id):
+    """
+    Admin endpoint: Get chunks for a Foundation document.
+    GET /chatlog/admin/foundation/<doc_id>/chunks/?limit=10
+    """
+    try:
+        try:
+            doc = FoundationDocument.objects.get(id=doc_id)
+        except FoundationDocument.DoesNotExist:
+            return JsonResponse({"error": "Document not found"}, status=404)
+
+        limit = int(request.GET.get('limit', 10))
+        limit = min(limit, 50)  # Cap at 50 chunks
+
+        chunks = []
+        try:
+            from django.db import connection
+            with connection.cursor() as cursor:
+                # Get chunks that match this document's filename
+                cursor.execute("""
+                    SELECT e.uuid, e.document, e.cmetadata
+                    FROM langchain_pg_embedding e
+                    JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+                    WHERE c.name = %s
+                    AND (
+                        e.cmetadata->>'source' LIKE %s
+                        OR e.cmetadata->>'source_file' LIKE %s
+                    )
+                    LIMIT %s
+                """, [FOUNDATION_COLLECTION, f'%{doc.filename}%', f'%{doc.filename}%', limit])
+
+                for row in cursor.fetchall():
+                    chunk_id, content, metadata = row
+                    page = None
+                    if metadata:
+                        page = metadata.get('page') or metadata.get('page_number')
+                    chunks.append({
+                        "id": str(chunk_id),
+                        "content_preview": content[:500] if content else "",
+                        "source_file": doc.filename,
+                        "page": page
+                    })
+        except Exception as db_err:
+            print(f"[Foundation Chunks] DB query error: {db_err}")
+
+        return JsonResponse({
+            "document_id": doc.id,
+            "filename": doc.filename,
+            "total_chunks": doc.chunks_count,
+            "chunks": chunks,
+            "showing": len(chunks)
+        })
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
 @require_http_methods(["GET"])
 def get_foundation_stats(request):
     """
