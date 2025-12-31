@@ -2212,7 +2212,7 @@ def get_foundation_document_chunks(request, doc_id):
             "total_chunks": doc.chunks_count,
             "chunks": chunks,
             "showing": len(chunks),
-            "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+            "uploaded_at": doc.created_at.isoformat() if doc.created_at else None,
             "status": doc.status
         })
 
